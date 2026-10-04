@@ -351,7 +351,6 @@ export struct ReaderView {
     this.bookSummaryText = bookOutlineSummary(this.chapters, 400);
     // 快速首帧：只采样第 0 页定纵横比，全部页先按无裁剪全页渲染；
     // 整书版式（裁剪）分析转后台，完成后重排。
-    this.analyzedBoxes = new Array<BBox | null>(n).fill(null);
     const neutral: PageScan = { box: null, spread: false, ink: 0 };
     this.pageScans = new Array<PageScan>(n).fill(neutral);
     const fallback: SampleGrid = downsampleGrid(594, 840, MAX_SAMPLES);
