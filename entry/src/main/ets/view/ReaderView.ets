@@ -8,8 +8,10 @@ import { buildPageChunks, visibleChunks, pagesToRelease, PageChunk, CHUNK_MAX_VP
 import { indexButtonLabel } from './PresentationMath';
 import { updateHighWater } from '../book/ReadingProgress';
 import { transformForCrop, DisplayTransform } from '../pdf/ReaderGeometry';
-import { findInkBBox, clusterByParity, BBox } from '../pdf/CropMath';
-import { parityCropFor, downsampleGrid, regionHint, SampleGrid } from '../pdf/CropPipeline';
+import { BBox } from '../pdf/CropMath';
+import { downsampleGrid, regionHint, SampleGrid } from '../pdf/CropPipeline';
+import { CROP_DEFAULTS, PageScan, CropResult, PageBox, scanPage, bookCrop,
+  boxForPage } from '../pdf/AutoCrop';
 import { PdfPageSource } from '../pdf/PdfPageSource';
 import { chaptersFromOutline, chapterAt, split, mergeNext, rename, moveBoundary } from '../book/ChapterModel';
 import { Chapter, OutlineMarker } from '../core/DocModel';
@@ -42,12 +44,23 @@ import { markersFromTocText } from '../pdf/ScanPipeline';
 import { diagnoseOpen, OpenDiagnosis, OpenProblem, PARSE_THREW } from '../pdf/OpenDiagnosis';
 
 // 长卷阅读壳：开书先只探测第 0 页定纵横比，立即全页渲染出首帧；
-// 整书裁剪分析（逐页降采样 → 墨迹包围盒 → 奇偶簇）转后台分批跑，完成后重排应用裁剪。
+// 整书裁剪分析（逐页降采样 → 行/列投影 → 四边各自稳健估框，见 pdf/AutoCrop）转后台分批跑。
 // 滚动只渲染窗口内页面并回收窗外页（LRU）。
 // 每页槽位叠 PageInkCanvas：普通笔黑墨、AI笔液态彩+一笔成形。
 const MAX_SAMPLES = 160;
-const INK_THRESHOLD = 180;
 const SEAM_OVERLAP = 12;
+
+// 裁框的落盘结构（ArkTS 不允许无类型对象字面量，必须显式声明）
+interface StoredCrop {
+  hasShared: boolean;
+  shared: PageBox;
+  split: boolean;
+  even: PageBox;
+  odd: PageBox;
+  spread: boolean;
+}
+
+const NO_CROP_BOX: PageBox = { top: 0, bottom: 1, left: 0, right: 1 };
 // 开书分析上限：整本逐页渲染会卡开书；超出部分不裁边（先跑通再优化）
 const ANALYZE_MAX_PAGES = 40;
 // 建书索引页数上限（v1：前 60 页有文字层即够用，全书索引走 T3）
@@ -184,7 +197,10 @@ export struct ReaderView {
   private qaAll: Array<QaRecord> = [];
   private source: PdfPageSource = new PdfPageSource();
   private sampleGrids: Array<SampleGrid> = [];
-  private analyzedBoxes: Array<BBox | null> = [];
+  private pageScans: Array<PageScan> = [];
+  private cropResult: CropResult = {
+    shared: null, even: null, odd: null, split: false, spread: false, used: 0, rejected: 0
+  };
   private pageCrops: Array<BBox | null> = [];
   private transforms: Array<DisplayTransform> = [];
   private inkStore: InkStore = new InkStore();
@@ -336,6 +352,8 @@ export struct ReaderView {
     // 快速首帧：只采样第 0 页定纵横比，全部页先按无裁剪全页渲染；
     // 整书版式（裁剪）分析转后台，完成后重排。
     this.analyzedBoxes = new Array<BBox | null>(n).fill(null);
+    const neutral: PageScan = { box: null, spread: false, ink: 0 };
+    this.pageScans = new Array<PageScan>(n).fill(neutral);
     const fallback: SampleGrid = downsampleGrid(594, 840, MAX_SAMPLES);
     try {
       const probe = await this.source.sampleGray(0, MAX_SAMPLES);
@@ -347,6 +365,12 @@ export struct ReaderView {
     for (let i = 0; i < n; i++) {
       this.sampleGrids.push(this.probeGrid);
       this.pageCrops.push(null);
+    }
+    // 算过的书直接读回裁框：第二次之后开书不必再逐页采样，版心也从第一帧就是最终值
+    const hadCrop = this.loadCrop();
+    if (hadCrop) {
+      this.applyBookCrop();
+      hilog.info(0x0000, 'ReaderView', `autoCrop loaded from disk (shared=${this.cropResult.shared !== null} split=${this.cropResult.split})`);
     }
     // 允许布局重试：此刻 onAreaChange 可能还没到（viewWidth 仍是 0）
     this.layoutRetryLeft = 30;
@@ -360,7 +384,9 @@ export struct ReaderView {
         this.jumpToPage(this.initialPage);
       }, 300);
     }
-    this.analyzeInBackground(n, Math.min(n, Math.max(ANALYZE_MAX_PAGES, this.indexCap)));
+    if (!hadCrop) {
+      this.analyzeInBackground(n, Math.min(n, Math.max(ANALYZE_MAX_PAGES, this.indexCap)));
+    }
   }
 
   // 整书版式分析：逐页降采样 → 墨迹包围盒 → 奇偶簇。
@@ -372,22 +398,23 @@ export struct ReaderView {
     this.analyzing = true;
     const fallback: SampleGrid = (this.probeGrid !== null) ? this.probeGrid
       : downsampleGrid(594, 840, MAX_SAMPLES);
-    const boxes: Array<BBox | null> = [];
     const grids: Array<SampleGrid> = [];
+    const scans: Array<PageScan> = [];
     try {
       for (let i = 0; i < analyzeCount; i++) {
         try {
           const sample = await this.source.sampleGray(i, MAX_SAMPLES);
           if (sample === null) {
-            boxes.push(null);
             grids.push(fallback);
+            scans.push({ box: null, spread: false, ink: 0 });
           } else {
-            boxes.push(findInkBBox(sample.gray, sample.grid.cols, sample.grid.rows, INK_THRESHOLD));
+            // 自适应阈值 + 行/列投影 + 噪声抑制，见 pdf/AutoCrop
             grids.push(sample.grid);
+            scans.push(scanPage(sample.gray, sample.grid.cols, sample.grid.rows, CROP_DEFAULTS));
           }
         } catch (err) {
-          boxes.push(null);
           grids.push(fallback);
+          scans.push({ box: null, spread: false, ink: 0 });
           hilog.error(0x0000, 'ReaderView', `sample page ${i} failed: ${err}`);
         }
         if (i % 8 === 7) {
@@ -398,13 +425,10 @@ export struct ReaderView {
         }
       }
       for (let i = 0; i < analyzeCount; i++) {
-        this.analyzedBoxes[i] = boxes[i];
         this.sampleGrids[i] = grids[i];
+        this.pageScans[i] = scans[i];
       }
-      const parity = clusterByParity(this.analyzedBoxes);
-      for (let i = 0; i < this.pageCrops.length; i++) {
-        this.pageCrops[i] = (i < analyzeCount) ? parityCropFor(i, parity) : null;
-      }
+      this.computeBookCrop(analyzeCount);
       // 版式重排会改页槽高度：按当前阅读页顶部回滚视口，避免正在读的位置跳变
       const anchorPage = this.readerPage;
       this.rebuildLayout();
@@ -418,6 +442,95 @@ export struct ReaderView {
       this.analysisStatus = '';
       this.analyzing = false;
     }
+  }
+
+  // 采样栅格 bbox → 页面像素 bbox。必须先换算再进 ReaderGeometry：
+  // ReaderGeometry 只在页面坐标（像素）里工作，直接喂栅格坐标会忽略 stepX/stepY 各向异性
+  // （stepY/stepX≈1.37），槽位高度偏小 37% → Image 被塞进比例错误的盒子，每页上下被切掉。
+  private cropBoxForPage(i: number): BBox | null {
+    const pb = boxForPage(this.cropResult, i);
+    if (pb === null || i < 0 || i >= this.sampleGrids.length) {
+      return null;
+    }
+    const g = this.sampleGrids[i];
+    const left = Math.max(0, Math.floor(pb.left * g.cols));
+    const top = Math.max(0, Math.floor(pb.top * g.rows));
+    const right = Math.min(g.cols - 1, Math.ceil(pb.right * g.cols) - 1);
+    const bottom = Math.min(g.rows - 1, Math.ceil(pb.bottom * g.rows) - 1);
+    if (right <= left || bottom <= top) {
+      return null;
+    }
+    const box: BBox = { left: left, top: top, right: right, bottom: bottom };
+    return box;
+  }
+
+  // 把「全书内容框」落到每一页上。
+  //
+  // 关键改进：框是**整本一个**（或按奇偶各一），所以**未分析页也用同一个框**，
+  // 不再出现"前 20 页裁了、后面的没裁"那种读到一半版心突变的情况；
+  // 而且一旦算稳（或从磁盘读回），它就不再变，翻页时版心恒定。
+  private applyBookCrop(): void {
+    if (this.cropResult.shared === null && !this.cropResult.split) {
+      return;
+    }
+    for (let i = 0; i < this.pageCrops.length; i++) {
+      this.pageCrops[i] = this.cropBoxForPage(i);
+    }
+  }
+
+  // 用已扫描的页做稳健估计，算稳了就落盘（下次开书直接读回，连重排都省了）
+  private computeBookCrop(analyzeCount: number): void {
+    const scans: Array<PageScan> = [];
+    for (let i = 0; i < analyzeCount && i < this.pageScans.length; i++) {
+      scans.push(this.pageScans[i]);
+    }
+    const r = bookCrop(scans, CROP_DEFAULTS);
+    this.cropResult = r;
+    this.applyBookCrop();
+    hilog.info(0x0000, 'ReaderView', `autoCrop used=${r.used} rejected=${r.rejected} ` +
+      `split=${r.split} spread=${r.spread} shared=${r.shared !== null} ` +
+      `box=${r.shared !== null ? `${r.shared.top.toFixed(3)},${r.shared.bottom.toFixed(3)},` +
+        `${r.shared.left.toFixed(3)},${r.shared.right.toFixed(3)}` : 'none'}`);
+    if (r.shared !== null || r.split) {
+      this.saveCrop();
+    }
+  }
+
+  private loadCrop(): boolean {
+    const obj = readJsonFile<StoredCrop>(`${this.filesDir()}/crop_${this.inkKey}.json`);
+    if (obj === undefined || obj === null) {
+      return false;
+    }
+    if (obj.hasShared !== true && obj.split !== true) {
+      return false;
+    }
+    const r: CropResult = {
+      shared: obj.hasShared === true ? obj.shared : null,
+      even: obj.split === true ? obj.even : null,
+      odd: obj.split === true ? obj.odd : null,
+      split: obj.split === true,
+      spread: obj.spread === true,
+      used: 0,
+      rejected: 0
+    };
+    this.cropResult = r;
+    return true;
+  }
+
+  private saveCrop(): void {
+    const r = this.cropResult;
+    if (r.shared === null && !r.split) {
+      return;
+    }
+    const obj: StoredCrop = {
+      hasShared: r.shared !== null,
+      shared: r.shared !== null ? r.shared : NO_CROP_BOX,
+      split: r.split,
+      even: r.even !== null ? r.even : NO_CROP_BOX,
+      odd: r.odd !== null ? r.odd : NO_CROP_BOX,
+      spread: r.spread
+    };
+    writeJsonFile(`${this.filesDir()}/crop_${this.inkKey}.json`, JSON.stringify(obj));
   }
 
   private rebuildLayout(): void {
@@ -1157,24 +1270,22 @@ export struct ReaderView {
       try {
         const sample = await this.source.sampleGray(i, MAX_SAMPLES);
         if (sample === null) {
-          this.analyzedBoxes[i] = null;
+          this.pageScans[i] = { box: null, spread: false, ink: 0 };
           this.sampleGrids[i] = (this.probeGrid !== null) ? this.probeGrid
             : downsampleGrid(594, 840, MAX_SAMPLES);
           continue;
         }
         this.sampleGrids[i] = sample.grid;
-        this.analyzedBoxes[i] = findInkBBox(sample.gray, sample.grid.cols, sample.grid.rows, INK_THRESHOLD);
+        this.pageScans[i] = scanPage(sample.gray, sample.grid.cols, sample.grid.rows, CROP_DEFAULTS);
       } catch (err) {
         // 单页渲染抛错不拖垮整批扩展（pdfService 偶发 62980109）
-        this.analyzedBoxes[i] = null;
+        this.pageScans[i] = { box: null, spread: false, ink: 0 };
         hilog.error(0x0000, 'ReaderView', `extendAnalysis page ${i} failed: ${err}`);
       }
     }
-    const parity = clusterByParity(this.analyzedBoxes);
-    for (let i = 0; i < this.sampleGrids.length; i++) {
-      // 只对已分析页应用簇裁剪；未分析页裁剪外推会误裁版式不同的页
-      this.pageCrops[i] = (i < to) ? parityCropFor(i, parity) : null;
-    }
+    // 扩页后重估一次全书框：新页会进入中位数/MAD 统计，
+    // 若与已存框不同则更新并落盘（正常书不会变，因为框本来就该一致）
+    this.computeBookCrop(to);
     this.rebuildLayout();
   }
 

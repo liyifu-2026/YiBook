@@ -28,7 +28,7 @@ entry/src/main/ets/
     JsonFile / Sse / Theme / Ports / DocModel / Batching
 ```
 
-**共 8 个业务域 + 3 个固定入口目录，47 个模块。**
+**共 8 个业务域 + 3 个固定入口目录，48 个模块。**
 
 `pages/Index.ets` 必须留在 `pages/`：`entry/src/main/resources/base/profile/main_pages.json` 按 `"pages/Index"` 引用它，移动会导致应用起不来。
 
@@ -39,7 +39,7 @@ entry/src/main/ets/
 | 域 | 职责 | 模块 |
 |---|---|---|
 | **core** | 与业务无关的基础设施 + 跨域共享契约：文件读写、SSE 流解析、配色、**端口接口**、**共享纯数据类型** | `JsonFile` `Sse` `Theme` `Ports` `DocModel` `Batching` |
-| **pdf** | PDF 取页与长卷几何：渲染窗、连续布局、裁白边、屏幕↔页面坐标变换、**长卷分块与可见窗口** | `PdfPageSource` `RenderWindow` `ContinuousLayout` `ReaderGeometry` `CropMath` `CropPipeline` `ScanPipeline` `ChunkWindow` |
+| **pdf** | PDF 取页与长卷几何：渲染窗、连续布局、**自动裁白边**、屏幕↔页面坐标变换、**长卷分块与可见窗口** | `PdfPageSource` `RenderWindow` `ContinuousLayout` `ReaderGeometry` `AutoCrop` `CropMath` `CropPipeline` `ScanPipeline` `ChunkWindow` |
 | **book** | 书架、章节模型、索引构建与缓存、已读水位 | `BookshelfModel` `ChapterModel` `BookIndexer` `IndexerMath` `IndexCache` `OcrTexts` `ReadingProgress` |
 | **search** | 本地双路检索与融合：分块、词法、向量、RRF+MMR、路由 | `Chunker` `LexicalIndex` `VectorIndex` `RankFusion` `QueryRouter` `SearchOrchestrator` `KnowledgeBase` |
 | **ai** | BYOK 云端链路：LLM/向量/视觉客户端、提示词装配、回答解析、问答记录 | `LlmClient` `EmbeddingClient` `VisionClient` `PromptAssembler` `ContextSummary` `AnswerParser` `Qa` |
@@ -108,14 +108,14 @@ review ─> （无出边）
 | 域 | 纯逻辑 | 含系统 API(`@kit`) | 含 ArkUI | 小计 |
 |---|---:|---:|---:|---:|
 | core | 5 | 1 | 0 | 6 |
-| pdf | 7 | 1 | 0 | 8 |
+| pdf | 8 | 1 | 0 | 9 |
 | book | 6 | 1 | 0 | 7 |
 | search | **7** | 0 | 0 | 7 |
 | ai | 4 | 3 | 0 | 7 |
 | ink | 5 | 0 | 1 | 6 |
 | review | **2** | 0 | 0 | 2 |
 | view | 1 | 0 | 3 | 4 |
-| **合计** | **37** | **6** | **4** | **47** |
+| **合计** | **38** | **6** | **4** | **48** |
 
 - `search/` 与 `review/` 是 **100% 纯逻辑**，任何改动都必须有单测覆盖。
 - `view/` 里的 `PresentationMath` 是**纯的**（列表见下），视图的呈现分支写在它里面而不是埋在组件里，才能被单测覆盖。
@@ -153,6 +153,7 @@ review ─> （无出边）
 6. **开书先渲染后分析**：只探测第 0 页定纵横比立即出首帧；整书版式分析转后台分批让出 UI 线程。
 7. **渲染窗口只能吃「绝对滚动位置」，绝不能吃 `onScroll` 的入参**：`Scroll.onScroll` 的两个入参是**相对上一帧的增量**，不是绝对滚动位置。把它当位置用的后果实测是「整本书只能看第一页、往下一片空白、页码恒为 P1」——`scrollY` 恒等于「最后一帧移动的那一点点」（真机实测 1.2~2.0 vp），渲染窗口于是永远算在 y≈0，只有第一块有内容、其余都是等高空占位。取值口径统一走 `pdf/RenderWindow` 的 `absoluteScrollOffset`（以 `scroller.currentOffset().yOffset` 为准，容器报不出位置时才退回增量累加），改动它有单测守着。
 8. **纯阅读时零逐帧状态写入**：`refreshWindow` 只在渲染窗口真的变化时才重算 `visibleChunks`——它的键一变，整块的 `PageInkCanvas` 会被重挂，既打断正在写的笔画也是滑动卡顿的主要来源；`scrollY` 只在**有气泡需要跟随内容**时才逐帧写（没有气泡就没有任何理由每帧重渲染整棵树）。
+9. **裁白边必须「四边各自稳健估计」，且以整本书为单位**（`pdf/AutoCrop`，带 13 个用例）：固定灰度阈值在扫描件上无解（实测偏暗页用旧阈值 180 会 100% 判成墨）；外接框对单点噪声零抵抗；**并集**对离群页零抵抗（少数出血页会把全书框拽到页边，边距永远裁不干净）。做法是：Otsu 自适应阈值 → 行/列投影 + 窗口**计数**抑制噪声 → 每条边取分位数（默认 `edgeQuantile=0.25`，只裁到 75% 的页都同意是空白的地方）→ 四分位距当一致性闸门（分布太散就**不裁**）→ `maxTrim` 夹住单边最多裁 25%。**四条边必须独立**：实测这本扫描件顶边近一半页有墨、而左右边距很一致，四边绑在一起判"版式是否一致"会互相否决、一页都裁不了。算出的框按书落盘（`crop_<key>.json`），第二次开书直接读回，版心从第一帧就是最终值、不再随分析进度跳变。
 
 ---
 

@@ -34,6 +34,7 @@ import bookIndexerTest from './BookIndexer.test';
 import chunkWindowTest from './ChunkWindow.test';
 import presentationMathTest from './PresentationMath.test';
 import openDiagnosisTest from './OpenDiagnosis.test';
+import autoCropTest from './AutoCrop.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -72,4 +73,5 @@ export default function testsuite() {
   chunkWindowTest();
   presentationMathTest();
   openDiagnosisTest();
+  autoCropTest();
 }
