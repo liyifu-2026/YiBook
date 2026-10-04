@@ -443,7 +443,10 @@ export struct ReaderView {
     const transforms: Array<DisplayTransform> = [];
     for (let i = 0; i < this.sampleGrids.length; i++) {
       const grid = this.sampleGrids[i];
-      const t = transformForCrop(grid.cols, grid.rows, this.pageCrops[i], this.viewWidth);
+      // 页面像素尺寸与裁剪框都走采样栅格：各轴用各自步长（见 transformForCrop 注释），
+      // 否则槽位高度会小 stepY/stepX 倍，每页上下被切掉。
+      const t = transformForCrop(grid.cols * grid.stepX, grid.rows * grid.stepY,
+        this.pageCrops[i], this.viewWidth, grid.stepX, grid.stepY);
       tops.push(0);
       slotH.push(t.contentHeight);
       images.push(null);
