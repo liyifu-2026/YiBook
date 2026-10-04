@@ -198,7 +198,10 @@ node "F:\deveco\DevEco Studio\tools\hvigor\bin\hvigorw.js" assembleHap
 ## 9. 已知技术债
 
 1. ~~`ai ↔ book`、`book ↔ pdf` 域级交叉引用~~ **已消除**（2026-10-04，见 §3）。遗留两处**单向**类型级依赖：`ink → pdf`、`search → ai`，不构成环。
-2. **巨型视图只拆了「逻辑」，没拆「结构」**：`view/ReaderView.ets` 1878 → 1771 行，`view/LibraryView.ets` 908 → 885 行。真正的问题在于 `ReaderView.build()` 仍有约 770 行、且整个文件**没有任何 `@Builder`**——所有 UI 内联在一个方法里。本次抽出的只是纯逻辑（`pdf/ChunkWindow`、`view/PresentationMath`、`ink/BubbleModel` 的新增函数，共 12 个新用例），因为那部分可测、零行为风险。**把 `build()` 拆成 `@Builder` 与独立子 `@Component` 仍是待办**，它需要跨组件传递约 40 个 `@State`（`@Link`/`@ObjectLink` 编排），属高风险改动，且界面文件归 UI agent 负责。
+2. **巨型视图：逻辑已拆、UI 结构已拆，但尚未拆成独立子组件**
+   - **逻辑**（可测部分）：`pdf/ChunkWindow`（分块/可见窗口/LRU）、`view/PresentationMath`（按钮文案/封面形变/书架列数/统计行）、`ink/BubbleModel` 新增（气泡投影/点位指标），共 12 个新用例。
+   - **UI 结构**：`view/ReaderView.build()` 由约 **765 行缩为 24 行薄壳**，11 个顶层段落移入具名 `@Builder`——`CanvasScroll` `LoadingLayer` `BubbleLayer` `BubblePins` `BubbleFoldBadge` `ClampLayer` `EdgeGestureStrip` `DraftBookmark` `ChapterPanel` `DraftPage` `BottomToolbar`。搬移是纯代码位移：用「代码行 **+44 / −0**」（净增仅为 11×`@Builder` + 11×签名 + 11×闭合 + 11×调用点）证明零丢失，并在 TGR-W10 上验证了渲染、滚动与错误态。
+   - **仍未做**：把这些 `@Builder` 移入独立子 `@Component`（如 `view/reader/`）。这需要跨组件编排约 40 个 `@State`（`@Link`/`@ObjectLink`），属高风险改动，且界面文件归 UI agent 负责——动手前需与 UI 侧协调停手。
 3. **双 agent 协作边界**：UI 视觉由独立 agent 负责。分域重构已移动全部界面文件路径（`reading/` → `view/`、`ink/` 等），该 agent 手上的旧路径全部失效，需同步告知。
 4. ~~`LibraryView_new.ets` 草稿待定~~ **已删除**（2026-10-04）。它是截断的残缺草稿：82 个开括号对 71 个闭括号、**没有 `build()` 方法**、末尾停在表达式中间，根本无法编译；而现行的 `view/LibraryView.ets` 已远超它（953+ 行、5 个 `@Builder`、主题切换/封面轮换/缩略图/删除确认）。内容仍可从基线提交 `924d82a:LibraryView_new.ets` 取回。
 5. **`entry/src/main/resources/rawfile/sample_textbook.pdf` 实为扫描版**（无文字层、书签为逐页垃圾），文本锚定与章节提取的真验证仍需一份**带文字层 + 真书签**的原生 PDF。

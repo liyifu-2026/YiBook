@@ -1116,763 +1116,830 @@ export struct ReaderView {
     return bubbleDotOpacity(b.phase);
   }
 
-  build() {
-    Stack() {
-      Scroll(this.scroller) {
-        Column() {
-          ForEach(this.visibleChunks, (ch: PageChunk) => {
-            // 窗口外块渲染为等高空占位：撑起整卷高度让长卷可滚（无绘制内容不触发纹理上限）
-            Stack() {
-              if (ch.pages.length > 0) {
-                ForEach(ch.pages, (i: number) => {
-                  Stack() {
-                    if (this.pageImages[i] !== null) {
-                      Image(this.pageImages[i]!)
-                        .width('100%')
-                        .height(this.slotHeights[i])
-                        .position({ x: 0, y: this.pageTops[i] - ch.top })
-                    }
-                    if (this.highlightPage === i) {
-                      Rect({ width: this.viewWidth - 8, height: this.slotHeights[i] })
-                        .radius(6)
-                        .fill('#FF8A2A22')
-                        .position({ x: 4, y: this.pageTops[i] - ch.top })
-                    }
-                    PageInkCanvas({
-                      pageIndex: i,
-                      slotWidth: this.viewWidth,
-                      slotHeight: this.slotHeights[i],
-                      penMode: this.penMode,
-                      revision: this.inkRevision,
-                      store: this.inkStore,
-                      pageTransform: this.transforms[i],
-                      onGestureArea: (p: number, b: BBox): void => {
-                        this.onGesture(p, b);
-                      },
-                      onStrokeAdded: (): void => {
-                        this.saveInk();
-                      }
-                    })
+
+  // ---- CanvasScroll ----
+  @Builder
+  CanvasScroll() {
+    Scroll(this.scroller) {
+      Column() {
+        ForEach(this.visibleChunks, (ch: PageChunk) => {
+          // 窗口外块渲染为等高空占位：撑起整卷高度让长卷可滚（无绘制内容不触发纹理上限）
+          Stack() {
+            if (ch.pages.length > 0) {
+              ForEach(ch.pages, (i: number) => {
+                Stack() {
+                  if (this.pageImages[i] !== null) {
+                    Image(this.pageImages[i]!)
                       .width('100%')
                       .height(this.slotHeights[i])
                       .position({ x: 0, y: this.pageTops[i] - ch.top })
                   }
-                }, (i: number) => `page_${i}_${this.pageImages[i] !== null ? 1 : 0}`)
-              }
+                  if (this.highlightPage === i) {
+                    Rect({ width: this.viewWidth - 8, height: this.slotHeights[i] })
+                      .radius(6)
+                      .fill('#FF8A2A22')
+                      .position({ x: 4, y: this.pageTops[i] - ch.top })
+                  }
+                  PageInkCanvas({
+                    pageIndex: i,
+                    slotWidth: this.viewWidth,
+                    slotHeight: this.slotHeights[i],
+                    penMode: this.penMode,
+                    revision: this.inkRevision,
+                    store: this.inkStore,
+                    pageTransform: this.transforms[i],
+                    onGestureArea: (p: number, b: BBox): void => {
+                      this.onGesture(p, b);
+                    },
+                    onStrokeAdded: (): void => {
+                      this.saveInk();
+                    }
+                  })
+                    .width('100%')
+                    .height(this.slotHeights[i])
+                    .position({ x: 0, y: this.pageTops[i] - ch.top })
+                }
+              }, (i: number) => `page_${i}_${this.pageImages[i] !== null ? 1 : 0}`)
             }
-            .width('100%')
-            .height(ch.height)
-          }, (ch: PageChunk) => `chunk_${ch.top}_${ch.pages.length}_${ch.imgKey}`)
+          }
+          .width('100%')
+          .height(ch.height)
+        }, (ch: PageChunk) => `chunk_${ch.top}_${ch.pages.length}_${ch.imgKey}`)
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .height('100%')
+    .scrollBar(BarState.Off)
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      this.viewWidth = Number(newArea.width);
+      this.viewportHeight = Number(newArea.height);
+      this.rebuildLayout();
+    })
+    .onScroll((_xOffset: number, yOffset: number) => {
+      this.scrollY = yOffset;
+      this.refreshWindow(yOffset);
+      // 进度节流落盘：每前进 5 页写一次，杀进程最多丢 5 页水位
+      if (this.highWaterPage - this.lastSavedWater >= 5) {
+        this.lastSavedWater = this.highWaterPage;
+        this.saveProgress();
+      }
+    })
+  }
+
+  // ---- LoadingLayer ----
+  @Builder
+  LoadingLayer() {
+    // 加载中 / 打不开：夜城品牌状态层（黑猫 + 一句话 + 行动点），覆盖内容区
+    if (this.loadPhase !== 1) {
+      Column() {
+        if (this.loadPhase === 2) {
+          Image($r('app.media.cat'))
+            .width(96)
+            .height(96)
+          Text('这本书暂时打不开')
+            .fontColor('#F7F0E4')
+            .fontSize(17)
+            .margin({ top: 20 })
+          Text('文件可能已损坏或格式不受支持')
+            .fontColor('#8CA2C0')
+            .fontSize(12)
+            .margin({ top: 8 })
+          Text('重试')
+            .fontColor('#060B12')
+            .fontSize(14)
+            .fontWeight(FontWeight.Bold)
+            .padding({ left: 26, right: 26, top: 11, bottom: 11 })
+            .borderRadius(12)
+            .backgroundColor('#FF8A2A')
+            .shadow({ radius: 0, color: '#060B12', offsetX: 3, offsetY: 4 })
+            .margin({ top: 24 })
+            .onClick(() => {
+              this.loadPhase = 0;
+              this.prepare();
+            })
+          Text('点左上角返回书房')
+            .fontColor('#5C7396')
+            .fontSize(11)
+            .margin({ top: 16 })
+        } else {
+          Image($r('app.media.cat'))
+            .width(72)
+            .height(72)
+            .opacity(0.9)
+          Text('正在打开…')
+            .fontColor('#8CA2C0')
+            .fontSize(13)
+            .margin({ top: 14 })
         }
-        .width('100%')
       }
       .width('100%')
       .height('100%')
-      .scrollBar(BarState.Off)
-      .onAreaChange((_oldArea: Area, newArea: Area) => {
-        this.viewWidth = Number(newArea.width);
-        this.viewportHeight = Number(newArea.height);
-        this.rebuildLayout();
-      })
-      .onScroll((_xOffset: number, yOffset: number) => {
-        this.scrollY = yOffset;
-        this.refreshWindow(yOffset);
-        // 进度节流落盘：每前进 5 页写一次，杀进程最多丢 5 页水位
-        if (this.highWaterPage - this.lastSavedWater >= 5) {
-          this.lastSavedWater = this.highWaterPage;
-          this.saveProgress();
-        }
-      })
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor('#101E33')
+    }
+  }
 
-      // 加载中 / 打不开：夜城品牌状态层（黑猫 + 一句话 + 行动点），覆盖内容区
-      if (this.loadPhase !== 1) {
-        Column() {
-          if (this.loadPhase === 2) {
-            Image($r('app.media.cat'))
-              .width(96)
-              .height(96)
-            Text('这本书暂时打不开')
-              .fontColor('#F7F0E4')
-              .fontSize(17)
-              .margin({ top: 20 })
-            Text('文件可能已损坏或格式不受支持')
-              .fontColor('#8CA2C0')
-              .fontSize(12)
-              .margin({ top: 8 })
-            Text('重试')
-              .fontColor('#060B12')
-              .fontSize(14)
-              .fontWeight(FontWeight.Bold)
-              .padding({ left: 26, right: 26, top: 11, bottom: 11 })
-              .borderRadius(12)
-              .backgroundColor('#FF8A2A')
-              .shadow({ radius: 0, color: '#060B12', offsetX: 3, offsetY: 4 })
-              .margin({ top: 24 })
-              .onClick(() => {
-                this.loadPhase = 0;
-                this.prepare();
-              })
-            Text('点左上角返回书房')
-              .fontColor('#5C7396')
-              .fontSize(11)
-              .margin({ top: 16 })
-          } else {
-            Image($r('app.media.cat'))
-              .width(72)
-              .height(72)
-              .opacity(0.9)
-            Text('正在打开…')
-              .fontColor('#8CA2C0')
+  // ---- BubbleLayer ----
+  @Builder
+  BubbleLayer() {
+    ForEach(this.shownBubbles(), (b: QuestionBubble) => {
+      if (this.bubbleViewportY(b) >= 0) {
+        Circle({ width: this.dotSize(b), height: this.dotSize(b) })
+          .fill('#FF8A2A')
+          .opacity(this.dotOpacity(b))
+          .scale({
+            x: b.phase === BubblePhase.Thinking ? (this.breatheOut ? 1.08 : 1) : 1,
+            y: b.phase === BubblePhase.Thinking ? (this.breatheOut ? 1.08 : 1) : 1
+          })
+          .position({ x: 4, y: this.bubbleViewportY(b) - this.dotSize(b) / 2 })
+          .onClick(() => {
+            this.onBubbleTap(b);
+          })
+        if (this.expandedBubbleId === b.id) {
+          Column() {
+            Text(`P${b.pageIndex + 1} · 圈选提问`)
+              .fontColor('#FF8A2A')
               .fontSize(13)
-              .margin({ top: 14 })
-          }
-        }
-        .width('100%')
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .backgroundColor('#101E33')
-      }
-
-      ForEach(this.shownBubbles(), (b: QuestionBubble) => {
-        if (this.bubbleViewportY(b) >= 0) {
-          Circle({ width: this.dotSize(b), height: this.dotSize(b) })
-            .fill('#FF8A2A')
-            .opacity(this.dotOpacity(b))
-            .scale({
-              x: b.phase === BubblePhase.Thinking ? (this.breatheOut ? 1.08 : 1) : 1,
-              y: b.phase === BubblePhase.Thinking ? (this.breatheOut ? 1.08 : 1) : 1
-            })
-            .position({ x: 4, y: this.bubbleViewportY(b) - this.dotSize(b) / 2 })
-            .onClick(() => {
-              this.onBubbleTap(b);
-            })
-          if (this.expandedBubbleId === b.id) {
-            Column() {
-              Text(`P${b.pageIndex + 1} · 圈选提问`)
+            if (this.byok.apiKey === '' || this.showConfig) {
+              if (this.showConfig) {
+                Text('修改 BYOK 配置')
+                  .fontColor('#FF8A2A')
+                  .fontSize(12)
+                  .margin({ top: 2 })
+                  .onClick(() => {
+                    this.showConfig = false;
+                  })
+              }
+              Text('配置 BYOK（OpenAI 兼容接口）')
+                .fontColor('#8CA2C0')
+                .fontSize(12)
+                .margin({ top: 6 })
+              TextInput({ placeholder: 'Base URL', text: this.inputBaseUrl })
+                .fontSize(12)
+                .height(36)
+                .margin({ top: 6 })
+                .onChange((v: string) => {
+                  this.inputBaseUrl = v;
+                })
+              TextInput({ placeholder: 'API Key', text: this.inputApiKey })
+                .fontSize(12)
+                .height(36)
+                .type(InputType.Password)
+                .margin({ top: 6 })
+                .onChange((v: string) => {
+                  this.inputApiKey = v;
+                })
+              TextInput({ placeholder: 'Chat 模型（如 deepseek-chat / qwen-plus）', text: this.inputModel })
+                .fontSize(12)
+                .height(36)
+                .margin({ top: 4 })
+                .onChange((v: string) => {
+                  this.inputModel = v;
+                })
+              Text('Embedding（可选，如 SiliconFlow bge-m3）')
+                .fontColor('#5C7396')
+                .fontSize(11)
+                .margin({ top: 6 })
+              TextInput({ placeholder: 'Embedding Base URL', text: this.inputEmbedBase })
+                .fontSize(12)
+                .height(36)
+                .margin({ top: 4 })
+                .onChange((v: string) => {
+                  this.inputEmbedBase = v;
+                })
+              TextInput({ placeholder: 'Embedding 模型', text: this.inputEmbedModel })
+                .fontSize(12)
+                .height(36)
+                .margin({ top: 4 })
+                .onChange((v: string) => {
+                  this.inputEmbedModel = v;
+                })
+              Text('Vision（可选，扫描书圈选OCR，如 Qwen2.5-VL）')
+                .fontColor('#5C7396')
+                .fontSize(11)
+                .margin({ top: 6 })
+              TextInput({ placeholder: 'Vision Base URL', text: this.inputVisionBase })
+                .fontSize(12)
+                .height(36)
+                .margin({ top: 4 })
+                .onChange((v: string) => {
+                  this.inputVisionBase = v;
+                })
+              TextInput({ placeholder: 'Vision 模型', text: this.inputVisionModel })
+                .fontSize(12)
+                .height(36)
+                .margin({ top: 4 })
+                .onChange((v: string) => {
+                  this.inputVisionModel = v;
+                })
+              Row() {
+                Text('跨书引用（统一知识库）')
+                  .fontColor('#8CA2C0')
+                  .fontSize(11)
+                  .layoutWeight(1)
+                Toggle({ type: ToggleType.Checkbox, isOn: this.byok.crossBook })
+                  .onChange((on: boolean) => {
+                    this.byok.crossBook = on;
+                    this.byokStore.save(getContext(this) as common.UIAbilityContext, this.byok);
+                  })
+              }
+              .width('100%')
+              .margin({ top: 6 })
+              Button('保存并就绪')
+                .fontSize(13)
+                .height(32)
+                .width('100%')
+                .margin({ top: 8 })
+                .backgroundColor('#FF8A2A')
+                .onClick(() => {
+                  const cfg: ByokConfig = {
+                    baseUrl: this.inputBaseUrl,
+                    apiKey: this.inputApiKey,
+                    model: this.inputModel,
+                    embedBaseUrl: this.inputEmbedBase,
+                    embedModel: this.inputEmbedModel,
+                    visionBaseUrl: this.inputVisionBase,
+                    visionModel: this.inputVisionModel,
+                    crossBook: this.byok.crossBook,
+                    crossNoticeShown: this.byok.crossNoticeShown
+                  };
+                  this.byok = cfg;
+                  this.byokStore.save(getContext(this) as common.UIAbilityContext, cfg);
+                })
+            } else if (this.cardPhaseOf(b.id) === 1) {
+              Text('思考中…')
                 .fontColor('#FF8A2A')
                 .fontSize(13)
-              if (this.byok.apiKey === '' || this.showConfig) {
-                if (this.showConfig) {
-                  Text('修改 BYOK 配置')
-                    .fontColor('#FF8A2A')
-                    .fontSize(12)
-                    .margin({ top: 2 })
-                    .onClick(() => {
-                      this.showConfig = false;
-                    })
-                }
-                Text('配置 BYOK（OpenAI 兼容接口）')
-                  .fontColor('#8CA2C0')
-                  .fontSize(12)
-                  .margin({ top: 6 })
-                TextInput({ placeholder: 'Base URL', text: this.inputBaseUrl })
-                  .fontSize(12)
-                  .height(36)
-                  .margin({ top: 6 })
-                  .onChange((v: string) => {
-                    this.inputBaseUrl = v;
-                  })
-                TextInput({ placeholder: 'API Key', text: this.inputApiKey })
-                  .fontSize(12)
-                  .height(36)
-                  .type(InputType.Password)
-                  .margin({ top: 6 })
-                  .onChange((v: string) => {
-                    this.inputApiKey = v;
-                  })
-                TextInput({ placeholder: 'Chat 模型（如 deepseek-chat / qwen-plus）', text: this.inputModel })
-                  .fontSize(12)
-                  .height(36)
-                  .margin({ top: 4 })
-                  .onChange((v: string) => {
-                    this.inputModel = v;
-                  })
-                Text('Embedding（可选，如 SiliconFlow bge-m3）')
-                  .fontColor('#5C7396')
+                .margin({ top: 6 })
+            } else if (this.cardPhaseOf(b.id) === 2) {
+              if (this.cardNoticeOf(b.id) !== '') {
+                Text(this.cardNoticeOf(b.id))
+                  .fontColor('#FF8A2A')
                   .fontSize(11)
-                  .margin({ top: 6 })
-                TextInput({ placeholder: 'Embedding Base URL', text: this.inputEmbedBase })
-                  .fontSize(12)
-                  .height(36)
                   .margin({ top: 4 })
-                  .onChange((v: string) => {
-                    this.inputEmbedBase = v;
-                  })
-                TextInput({ placeholder: 'Embedding 模型', text: this.inputEmbedModel })
-                  .fontSize(12)
-                  .height(36)
-                  .margin({ top: 4 })
-                  .onChange((v: string) => {
-                    this.inputEmbedModel = v;
-                  })
-                Text('Vision（可选，扫描书圈选OCR，如 Qwen2.5-VL）')
-                  .fontColor('#5C7396')
-                  .fontSize(11)
-                  .margin({ top: 6 })
-                TextInput({ placeholder: 'Vision Base URL', text: this.inputVisionBase })
-                  .fontSize(12)
-                  .height(36)
-                  .margin({ top: 4 })
-                  .onChange((v: string) => {
-                    this.inputVisionBase = v;
-                  })
-                TextInput({ placeholder: 'Vision 模型', text: this.inputVisionModel })
-                  .fontSize(12)
-                  .height(36)
-                  .margin({ top: 4 })
-                  .onChange((v: string) => {
-                    this.inputVisionModel = v;
-                  })
-                Row() {
-                  Text('跨书引用（统一知识库）')
+              }
+              Text(this.cardAnswerOf(b.id))
+                .fontColor('#F7F0E4')
+                .fontSize(13)
+                .margin({ top: 6 })
+              if (this.cardRefPagesOf(b.id).length > 0) {
+                Row({ space: 6 }) {
+                  Text('来源：')
                     .fontColor('#8CA2C0')
                     .fontSize(11)
-                    .layoutWeight(1)
-                  Toggle({ type: ToggleType.Checkbox, isOn: this.byok.crossBook })
-                    .onChange((on: boolean) => {
-                      this.byok.crossBook = on;
-                      this.byokStore.save(getContext(this) as common.UIAbilityContext, this.byok);
-                    })
+                  ForEach(this.cardRefPagesOf(b.id), (pg: number) => {
+                    Text(`P${pg + 1}`)
+                      .fontColor('#FF8A2A')
+                      .fontSize(11)
+                      .onClick(() => {
+                        this.jumpToPage(pg);
+                      })
+                  }, (pg: number) => `ref_${pg}`)
                 }
-                .width('100%')
                 .margin({ top: 6 })
-                Button('保存并就绪')
-                  .fontSize(13)
-                  .height(32)
-                  .width('100%')
-                  .margin({ top: 8 })
-                  .backgroundColor('#FF8A2A')
-                  .onClick(() => {
-                    const cfg: ByokConfig = {
-                      baseUrl: this.inputBaseUrl,
-                      apiKey: this.inputApiKey,
-                      model: this.inputModel,
-                      embedBaseUrl: this.inputEmbedBase,
-                      embedModel: this.inputEmbedModel,
-                      visionBaseUrl: this.inputVisionBase,
-                      visionModel: this.inputVisionModel,
-                      crossBook: this.byok.crossBook,
-                      crossNoticeShown: this.byok.crossNoticeShown
-                    };
-                    this.byok = cfg;
-                    this.byokStore.save(getContext(this) as common.UIAbilityContext, cfg);
-                  })
-              } else if (this.cardPhaseOf(b.id) === 1) {
-                Text('思考中…')
-                  .fontColor('#FF8A2A')
-                  .fontSize(13)
-                  .margin({ top: 6 })
-              } else if (this.cardPhaseOf(b.id) === 2) {
-                if (this.cardNoticeOf(b.id) !== '') {
-                  Text(this.cardNoticeOf(b.id))
-                    .fontColor('#FF8A2A')
+              }
+              if (this.cardRelatedPagesOf(b.id).length > 0) {
+                Row({ space: 6 }) {
+                  Text('相关位置：')
+                    .fontColor('#8CA2C0')
                     .fontSize(11)
-                    .margin({ top: 4 })
-                }
-                Text(this.cardAnswerOf(b.id))
-                  .fontColor('#F7F0E4')
-                  .fontSize(13)
-                  .margin({ top: 6 })
-                if (this.cardRefPagesOf(b.id).length > 0) {
-                  Row({ space: 6 }) {
-                    Text('来源：')
-                      .fontColor('#8CA2C0')
+                  ForEach(this.cardRelatedPagesOf(b.id), (pg: number) => {
+                    Text(`P${pg + 1}`)
+                      .fontColor('#FF8A2A')
                       .fontSize(11)
-                    ForEach(this.cardRefPagesOf(b.id), (pg: number) => {
-                      Text(`P${pg + 1}`)
-                        .fontColor('#FF8A2A')
-                        .fontSize(11)
-                        .onClick(() => {
-                          this.jumpToPage(pg);
-                        })
-                    }, (pg: number) => `ref_${pg}`)
-                  }
-                  .margin({ top: 6 })
+                      .opacity(0.75)
+                      .onClick(() => {
+                        this.jumpToPage(pg);
+                      })
+                  }, (pg: number) => `rel_${pg}`)
                 }
-                if (this.cardRelatedPagesOf(b.id).length > 0) {
-                  Row({ space: 6 }) {
-                    Text('相关位置：')
-                      .fontColor('#8CA2C0')
-                      .fontSize(11)
-                    ForEach(this.cardRelatedPagesOf(b.id), (pg: number) => {
-                      Text(`P${pg + 1}`)
-                        .fontColor('#FF8A2A')
-                        .fontSize(11)
-                        .opacity(0.75)
-                        .onClick(() => {
-                          this.jumpToPage(pg);
-                        })
-                    }, (pg: number) => `rel_${pg}`)
-                  }
-                  .margin({ top: 4 })
-                }
-                Text('修改 BYOK 配置 →')
-                  .fontColor('#8CA2C0')
-                  .fontSize(11)
-                  .margin({ top: 6 })
-                  .onClick(() => {
-                    this.showConfig = true;
-                  })
-              } else {
-                Text('正在准备提问…')
-                  .fontColor('#8CA2C0')
-                  .fontSize(12)
-                  .margin({ top: 6 })
+                .margin({ top: 4 })
               }
-              Row({ space: 6 }) {
-                TextInput({ placeholder: '输入你的问题…', text: this.bubbleInput(b) })
-                  .fontSize(12)
-                  .height(32)
-                  .layoutWeight(1)
-                  .onChange((v: string) => {
-                    this.bubbleInputs.set(b.id, v);
-                  })
-                Button('问')
-                  .fontSize(12)
-                  .height(32)
-                  .backgroundColor('#FF8A2A')
-                  .onClick(() => {
-                    this.sendQuestion(b);
-                  })
-              }
-              .margin({ top: 8 })
+              Text('修改 BYOK 配置 →')
+                .fontColor('#8CA2C0')
+                .fontSize(11)
+                .margin({ top: 6 })
+                .onClick(() => {
+                  this.showConfig = true;
+                })
+            } else {
+              Text('正在准备提问…')
+                .fontColor('#8CA2C0')
+                .fontSize(12)
+                .margin({ top: 6 })
             }
-            .padding(12)
-            .borderRadius(10)
-            .backgroundColor('#182A47')
-            .width(300)
-            .alignItems(HorizontalAlign.Start)
-            .position({ x: 28, y: this.bubbleViewportY(b) - 20 })
-            .onClick(() => {
-              this.expandedBubbleId = -1;
-            })
-          }
-        }
-      }, (b: QuestionBubble) => `bubble_${b.id}_${b.phase}`)
-
-      // 滚出视野的气泡缩成图钉（点击跳回所在页）
-      ForEach(this.shownBubbles(), (b: QuestionBubble, idx: number) => {
-        if (this.bubbleViewportY(b) < 0) {
-          Circle({ width: 6, height: 6 })
-            .fill('#FF8A2A')
-            .opacity(0.7)
-            .position({ x: 6, y: 60 + idx * 16 })
-            .onClick(() => {
-              this.jumpToPage(b.pageIndex);
-            })
-        }
-      }, (b: QuestionBubble, idx: number) => `pin_${b.id}_${idx}`)
-
-      if (foldBubbles(this.bubbles, 5).extraCount > 0) {
-        Text(`+${foldBubbles(this.bubbles, 5).extraCount}`)
-          .fontColor('#FF8A2A')
-          .fontSize(11)
-          .position({ x: 2, y: 52 })
-      }
-
-      // 夹页模式：虚线固定视口中央，上下滑动对准章末，确认即在当前章内拆分
-      if (this.clampMode) {
-        Column()
-          .width('100%')
-          .height(0)
-          .border({ width: 2, color: '#FF8A2A', style: BorderStyle.Dashed })
-          .position({ x: 0, y: (this.viewportHeight > 0 ? this.viewportHeight : 600) / 2 })
-        Text(`对准 P${this.clampAimPage() + 1}`)
-          .fontColor('#FF8A2A')
-          .fontSize(13)
-          .position({
-            x: this.viewWidth > 0 ? this.viewWidth - 90 : 300,
-            y: (this.viewportHeight > 0 ? this.viewportHeight : 600) / 2 - 26
-          })
-        Column() {
-          Text('上下滑动，把虚线对准章末')
-            .fontColor('#B9C7DC')
-            .fontSize(12)
-          Row({ space: 8 }) {
-            Button('取消')
-              .fontSize(12)
-              .height(30)
-              .backgroundColor('#182A47')
-              .onClick(() => {
-                this.clampMode = false;
-              })
-            Button('确认夹入')
-              .fontSize(12)
-              .height(30)
-              .backgroundColor('#FF8A2A')
-              .onClick(() => {
-                this.confirmClamp();
-              })
-          }
-        }
-        .width('100%')
-        .padding(10)
-        .backgroundColor('rgba(10,18,32,0.95)')
-        .alignItems(HorizontalAlign.Center)
-        .position({
-          x: 0,
-          y: (this.viewportHeight > 0 ? this.viewportHeight : 600) - 86
-        })
-      }
-
-      // 左缘手势条：左滑掀纸进草稿（避开画笔层的独立命中区）
-      if (!this.draftOpen) {
-        Column()
-          .width(EDGE_STRIP_W)
-          .height('100%')
-          .hitTestBehavior(HitTestMode.Default)
-          .gesture(PanGesture({ direction: PanDirection.Horizontal, distance: 40 })
-            .onActionEnd((e: GestureEvent) => {
-              if (isLeftSwipe(e.offsetX, e.offsetY, SWIPE_THRESHOLD)) {
-                if (this.draftAnchor < 0) {
-                  this.draftAnchor = this.readerPage;
-                  this.draftEnd = this.readerPage;
-                }
-                this.draftOpen = true;
-              }
-            }))
-          .position({ x: 0, y: 0 })
-      }
-
-      // 草稿书签（右缘）：草稿范围覆盖当前页时出现
-      if (!this.draftOpen && this.draftAnchor >= 0 && this.readerPage >= this.draftAnchor
-        && this.readerPage <= this.draftEnd) {
-        Button('草')
-          .fontSize(12)
-          .width(26)
-          .height(56)
-          .type(ButtonType.Capsule)
-          .backgroundColor('#FF8A2A66')
-          .fontColor('#F7F0E4')
-          .position({ x: this.viewWidth > 0 ? this.viewWidth - 24 : 380, y: 140 })
-          .onClick(() => {
-            this.draftOpen = true;
-          })
-      }
-
-      // 分章夹子面板
-      if (this.chapterPanelOpen) {
-        Column() {
-          Row() {
-            Column() {
-              Text('分章夹子')
-                .fontColor('#F7F0E4')
-                .fontSize(15)
-                .fontWeight(FontWeight.Bold)
-              if (this.chapters.length <= 1) {
-                Text('要不要先夹一章？跳过也不影响任何功能')
-                  .fontColor('#8CA2C0')
-                  .fontSize(11)
-                  .margin({ top: 2 })
-              }
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-            Blank()
-            Button('收起')
-              .fontSize(12)
-              .height(26)
-              .backgroundColor('#182A47')
-              .onClick(() => {
-                this.chapterPanelOpen = false;
-              })
-          }
-          .width('100%')
-          if (this.chapters.length <= 1) {
-            Button('识章（扫描书：视觉读目录页）')
-              .fontSize(12)
-              .height(28)
-              .width('100%')
-              .backgroundColor('#FF8A2A')
-              .margin({ top: 6 })
-              .onClick(() => {
-                this.recognizeToc();
-              })
-          }
-          Button('夹页（新开一章）')
-            .fontSize(12)
-            .height(28)
-            .width('100%')
-            .backgroundColor('#182A47')
-            .margin({ top: 6 })
-            .onClick(() => {
-              this.chapterPanelOpen = false;
-              this.clampMode = true;
-            })
-          if (this.renameIdx >= 0) {
             Row({ space: 6 }) {
-              TextInput({ text: this.renameInput })
+              TextInput({ placeholder: '输入你的问题…', text: this.bubbleInput(b) })
                 .fontSize(12)
                 .height(32)
                 .layoutWeight(1)
                 .onChange((v: string) => {
-                  this.renameInput = v;
+                  this.bubbleInputs.set(b.id, v);
                 })
-              Button('定名')
+              Button('问')
                 .fontSize(12)
                 .height(32)
                 .backgroundColor('#FF8A2A')
                 .onClick(() => {
-                  this.applyChapters(rename(this.chapters, this.renameIdx, this.renameInput));
-                  this.renameIdx = -1;
+                  this.sendQuestion(b);
                 })
             }
-            .width('100%')
             .margin({ top: 8 })
           }
-          List({ space: 4 }) {
-            ForEach(this.chapters, (c: Chapter, idx: number) => {
-              ListItem() {
-                Row() {
-                  Text(`${c.title}  P${c.firstPage + 1}-${c.lastPage + 1}`)
-                    .fontColor('#DCE6F5')
-                    .fontSize(12)
-                    .maxLines(1)
-                    .layoutWeight(1)
-                    .onClick(() => {
-                      this.renameIdx = idx;
-                      this.renameInput = c.title;
-                    })
-                  Button('拆')
-                    .fontSize(11)
-                    .height(24)
-                    .backgroundColor('#182A47')
-                    .onClick(() => {
-                      const at = (this.readerPage > c.firstPage && this.readerPage <= c.lastPage)
-                        ? this.readerPage : c.firstPage + 1;
-                      this.applyChapters(split(this.chapters, idx, at));
-                    })
-                  Button('合')
+          .padding(12)
+          .borderRadius(10)
+          .backgroundColor('#182A47')
+          .width(300)
+          .alignItems(HorizontalAlign.Start)
+          .position({ x: 28, y: this.bubbleViewportY(b) - 20 })
+          .onClick(() => {
+            this.expandedBubbleId = -1;
+          })
+        }
+      }
+    }, (b: QuestionBubble) => `bubble_${b.id}_${b.phase}`)
+  }
+
+  // ---- BubblePins ----
+  @Builder
+  BubblePins() {
+    // 滚出视野的气泡缩成图钉（点击跳回所在页）
+    ForEach(this.shownBubbles(), (b: QuestionBubble, idx: number) => {
+      if (this.bubbleViewportY(b) < 0) {
+        Circle({ width: 6, height: 6 })
+          .fill('#FF8A2A')
+          .opacity(0.7)
+          .position({ x: 6, y: 60 + idx * 16 })
+          .onClick(() => {
+            this.jumpToPage(b.pageIndex);
+          })
+      }
+    }, (b: QuestionBubble, idx: number) => `pin_${b.id}_${idx}`)
+  }
+
+  // ---- BubbleFoldBadge ----
+  @Builder
+  BubbleFoldBadge() {
+    if (foldBubbles(this.bubbles, 5).extraCount > 0) {
+      Text(`+${foldBubbles(this.bubbles, 5).extraCount}`)
+        .fontColor('#FF8A2A')
+        .fontSize(11)
+        .position({ x: 2, y: 52 })
+    }
+  }
+
+  // ---- ClampLayer ----
+  @Builder
+  ClampLayer() {
+    // 夹页模式：虚线固定视口中央，上下滑动对准章末，确认即在当前章内拆分
+    if (this.clampMode) {
+      Column()
+        .width('100%')
+        .height(0)
+        .border({ width: 2, color: '#FF8A2A', style: BorderStyle.Dashed })
+        .position({ x: 0, y: (this.viewportHeight > 0 ? this.viewportHeight : 600) / 2 })
+      Text(`对准 P${this.clampAimPage() + 1}`)
+        .fontColor('#FF8A2A')
+        .fontSize(13)
+        .position({
+          x: this.viewWidth > 0 ? this.viewWidth - 90 : 300,
+          y: (this.viewportHeight > 0 ? this.viewportHeight : 600) / 2 - 26
+        })
+      Column() {
+        Text('上下滑动，把虚线对准章末')
+          .fontColor('#B9C7DC')
+          .fontSize(12)
+        Row({ space: 8 }) {
+          Button('取消')
+            .fontSize(12)
+            .height(30)
+            .backgroundColor('#182A47')
+            .onClick(() => {
+              this.clampMode = false;
+            })
+          Button('确认夹入')
+            .fontSize(12)
+            .height(30)
+            .backgroundColor('#FF8A2A')
+            .onClick(() => {
+              this.confirmClamp();
+            })
+        }
+      }
+      .width('100%')
+      .padding(10)
+      .backgroundColor('rgba(10,18,32,0.95)')
+      .alignItems(HorizontalAlign.Center)
+      .position({
+        x: 0,
+        y: (this.viewportHeight > 0 ? this.viewportHeight : 600) - 86
+      })
+    }
+  }
+
+  // ---- EdgeGestureStrip ----
+  @Builder
+  EdgeGestureStrip() {
+    // 左缘手势条：左滑掀纸进草稿（避开画笔层的独立命中区）
+    if (!this.draftOpen) {
+      Column()
+        .width(EDGE_STRIP_W)
+        .height('100%')
+        .hitTestBehavior(HitTestMode.Default)
+        .gesture(PanGesture({ direction: PanDirection.Horizontal, distance: 40 })
+          .onActionEnd((e: GestureEvent) => {
+            if (isLeftSwipe(e.offsetX, e.offsetY, SWIPE_THRESHOLD)) {
+              if (this.draftAnchor < 0) {
+                this.draftAnchor = this.readerPage;
+                this.draftEnd = this.readerPage;
+              }
+              this.draftOpen = true;
+            }
+          }))
+        .position({ x: 0, y: 0 })
+    }
+  }
+
+  // ---- DraftBookmark ----
+  @Builder
+  DraftBookmark() {
+    // 草稿书签（右缘）：草稿范围覆盖当前页时出现
+    if (!this.draftOpen && this.draftAnchor >= 0 && this.readerPage >= this.draftAnchor
+      && this.readerPage <= this.draftEnd) {
+      Button('草')
+        .fontSize(12)
+        .width(26)
+        .height(56)
+        .type(ButtonType.Capsule)
+        .backgroundColor('#FF8A2A66')
+        .fontColor('#F7F0E4')
+        .position({ x: this.viewWidth > 0 ? this.viewWidth - 24 : 380, y: 140 })
+        .onClick(() => {
+          this.draftOpen = true;
+        })
+    }
+  }
+
+  // ---- ChapterPanel ----
+  @Builder
+  ChapterPanel() {
+    // 分章夹子面板
+    if (this.chapterPanelOpen) {
+      Column() {
+        Row() {
+          Column() {
+            Text('分章夹子')
+              .fontColor('#F7F0E4')
+              .fontSize(15)
+              .fontWeight(FontWeight.Bold)
+            if (this.chapters.length <= 1) {
+              Text('要不要先夹一章？跳过也不影响任何功能')
+                .fontColor('#8CA2C0')
+                .fontSize(11)
+                .margin({ top: 2 })
+            }
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          Blank()
+          Button('收起')
+            .fontSize(12)
+            .height(26)
+            .backgroundColor('#182A47')
+            .onClick(() => {
+              this.chapterPanelOpen = false;
+            })
+        }
+        .width('100%')
+        if (this.chapters.length <= 1) {
+          Button('识章（扫描书：视觉读目录页）')
+            .fontSize(12)
+            .height(28)
+            .width('100%')
+            .backgroundColor('#FF8A2A')
+            .margin({ top: 6 })
+            .onClick(() => {
+              this.recognizeToc();
+            })
+        }
+        Button('夹页（新开一章）')
+          .fontSize(12)
+          .height(28)
+          .width('100%')
+          .backgroundColor('#182A47')
+          .margin({ top: 6 })
+          .onClick(() => {
+            this.chapterPanelOpen = false;
+            this.clampMode = true;
+          })
+        if (this.renameIdx >= 0) {
+          Row({ space: 6 }) {
+            TextInput({ text: this.renameInput })
+              .fontSize(12)
+              .height(32)
+              .layoutWeight(1)
+              .onChange((v: string) => {
+                this.renameInput = v;
+              })
+            Button('定名')
+              .fontSize(12)
+              .height(32)
+              .backgroundColor('#FF8A2A')
+              .onClick(() => {
+                this.applyChapters(rename(this.chapters, this.renameIdx, this.renameInput));
+                this.renameIdx = -1;
+              })
+          }
+          .width('100%')
+          .margin({ top: 8 })
+        }
+        List({ space: 4 }) {
+          ForEach(this.chapters, (c: Chapter, idx: number) => {
+            ListItem() {
+              Row() {
+                Text(`${c.title}  P${c.firstPage + 1}-${c.lastPage + 1}`)
+                  .fontColor('#DCE6F5')
+                  .fontSize(12)
+                  .maxLines(1)
+                  .layoutWeight(1)
+                  .onClick(() => {
+                    this.renameIdx = idx;
+                    this.renameInput = c.title;
+                  })
+                Button('拆')
+                  .fontSize(11)
+                  .height(24)
+                  .backgroundColor('#182A47')
+                  .onClick(() => {
+                    const at = (this.readerPage > c.firstPage && this.readerPage <= c.lastPage)
+                      ? this.readerPage : c.firstPage + 1;
+                    this.applyChapters(split(this.chapters, idx, at));
+                  })
+                Button('合')
+                  .fontSize(11)
+                  .height(24)
+                  .backgroundColor('#182A47')
+                  .margin({ left: 4 })
+                  .onClick(() => {
+                    this.applyChapters(mergeNext(this.chapters, idx));
+                  })
+                if (idx > 0) {
+                  Button('缝')
                     .fontSize(11)
                     .height(24)
                     .backgroundColor('#182A47')
                     .margin({ left: 4 })
                     .onClick(() => {
-                      this.applyChapters(mergeNext(this.chapters, idx));
+                      this.applyChapters(moveBoundary(this.chapters, idx, this.readerPage));
                     })
-                  if (idx > 0) {
-                    Button('缝')
-                      .fontSize(11)
-                      .height(24)
-                      .backgroundColor('#182A47')
-                      .margin({ left: 4 })
-                      .onClick(() => {
-                        this.applyChapters(moveBoundary(this.chapters, idx, this.readerPage));
-                      })
-                  }
                 }
-                .width('100%')
-                .padding(6)
-                .borderRadius(6)
-                .backgroundColor('#23395C')
               }
-            }, (c: Chapter, idx: number) => `ch_${idx}_${c.firstPage}_${c.lastPage}`)
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .margin({ top: 8 })
-        }
-        .padding(12)
-        .borderRadius(12)
-        .backgroundColor('#182A47')
-        .width('86%')
-        .height('62%')
-        .alignItems(HorizontalAlign.Start)
-      }
-
-      // 草稿页（v1：单张长画布 + 范围延伸）
-      if (this.draftOpen) {
-        Column() {
-          Row({ space: 8 }) {
-            Text(this.draftAnchor >= 0
-              ? `草稿 · 范围P${this.draftAnchor + 1}-${this.draftEnd + 1}` : '草稿')
-              .fontColor('#F7F0E4')
-              .fontSize(13)
-            Blank()
-            Button('+1页')
-              .fontSize(12)
-              .height(26)
-              .backgroundColor('#182A47')
-              .onClick(() => {
-                this.draftEnd += 1;
-                this.saveDraft();
-              })
-            Button('完成')
-              .fontSize(12)
-              .height(26)
-              .backgroundColor('#FF8A2A')
-              .onClick(() => {
-                this.saveDraft();
-                this.draftOpen = false;
-              })
-          }
-          .width('100%')
-          .height(34)
-          .padding({ left: 10, right: 10 })
-
-          Stack() {
-            // 草稿纸面：黑墨需要纸底（预览核验发现的对比度缺陷）
-            Column()
               .width('100%')
-              .height('100%')
-              .backgroundColor('#F7F5F0')
-            PageInkCanvas({
-              pageIndex: 0,
-              slotWidth: this.viewWidth > 0 ? this.viewWidth : 400,
-              slotHeight: DRAFT_CANVAS_H,
-              penMode: this.penMode,
-              store: this.draftStore,
-              pageTransform: {
-                scale: 1,
-                offsetX: 0,
-                offsetY: 0,
-                contentHeight: DRAFT_CANVAS_H
-              },
-              onGestureArea: (_p: number, _b: BBox): void => {
-              },
-              onStrokeAdded: (): void => {
-                this.saveDraft();
-              }
-            })
-              .width('100%')
-              .height('100%')
-          }
-          .width('100%')
-          .layoutWeight(1)
+              .padding(6)
+              .borderRadius(6)
+              .backgroundColor('#23395C')
+            }
+          }, (c: Chapter, idx: number) => `ch_${idx}_${c.firstPage}_${c.lastPage}`)
         }
         .width('100%')
-        .height('100%')
-        .backgroundColor('#101E33')
+        .layoutWeight(1)
+        .margin({ top: 8 })
       }
+      .padding(12)
+      .borderRadius(12)
+      .backgroundColor('#182A47')
+      .width('86%')
+      .height('62%')
+      .alignItems(HorizontalAlign.Start)
+    }
+  }
 
-      // 工具栏贴底：Stack 子组件默认居中会把工具栏悬在屏幕正中——
-      // 包一层全高透明容器， justifyContent End 落底，空白区放行触摸给长卷
+  // ---- DraftPage ----
+  @Builder
+  DraftPage() {
+    // 草稿页（v1：单张长画布 + 范围延伸）
+    if (this.draftOpen) {
       Column() {
-        Row() {
-          Text(`${this.chapterTitle} · P${this.highWaterPage + 1}`)
-            .fontColor('#8CA2C0')
+        Row({ space: 8 }) {
+          Text(this.draftAnchor >= 0
+            ? `草稿 · 范围P${this.draftAnchor + 1}-${this.draftEnd + 1}` : '草稿')
+            .fontColor('#F7F0E4')
+            .fontSize(13)
+          Blank()
+          Button('+1页')
             .fontSize(12)
-        Button('−')
-          .fontSize(11)
-          .width(22)
-          .height(22)
-          .padding(0)
-          .backgroundColor('#182A47')
-          .margin({ left: 6 })
-          .onClick(() => {
-            this.highWaterPage = Math.max(0, this.highWaterPage - 1);
-            this.saveProgress();
-          })
-        Button('+')
-          .fontSize(11)
-          .width(22)
-          .height(22)
-          .padding(0)
-          .backgroundColor('#182A47')
-          .margin({ left: 2 })
-          .onClick(() => {
-            this.highWaterPage = Math.min(this.pageTops.length - 1, this.highWaterPage + 1);
-            this.saveProgress();
-          })
-        Button(this.wholeBook ? '全书' : '已读')
-          .fontSize(11)
-          .height(22)
-          .padding({ left: 6, right: 6 })
-          .backgroundColor(this.wholeBook ? '#FF8A2A' : '#182A47')
-          .fontColor('#F7F0E4')
-          .margin({ left: 6 })
-          .onClick(() => {
-            this.wholeBook = !this.wholeBook;
-          })
-        if (this.questionCount > 0) {
-          Text(`问 ${this.questionCount}`)
-            .fontColor('#FF8A2A')
+            .height(26)
+            .backgroundColor('#182A47')
+            .onClick(() => {
+              this.draftEnd += 1;
+              this.saveDraft();
+            })
+          Button('完成')
             .fontSize(12)
-            .margin({ left: 6 })
+            .height(26)
+            .backgroundColor('#FF8A2A')
+            .onClick(() => {
+              this.saveDraft();
+              this.draftOpen = false;
+            })
         }
-        Blank()
-        Button(this.indexButtonText())
-          .fontSize(this.indexStatus === '' ? 13 : 11)
-          .height(32)
-          .padding({ left: 10, right: 10 })
-          .backgroundColor('#22395F')
-          .fontColor(this.indexReady ? '#F7F0E4' : '#FF8A2A')
-          .opacity(this.indexBuilding ? 0.6 : 1)
-          .onClick(() => {
-            if (this.indexReady && this.indexCap < this.pageTops.length) {
-              this.extendIndex();
-            } else {
-              this.runOcrIndex();
-            }
-          })
-        Button('草')
-          .fontSize(15)
-          .height(34)
-          .padding({ left: 12, right: 12 })
-          .backgroundColor(this.draftOpen ? '#FF8A2A' : '#22395F')
-          .fontColor(this.draftOpen ? '#060B12' : '#F7F0E4')
-          .onClick(() => {
-            if (this.draftAnchor < 0) {
-              this.draftAnchor = this.readerPage;
-              this.draftEnd = this.readerPage;
-            }
-            this.draftOpen = true;
-          })
-        Button('夹')
-          .fontSize(15)
-          .height(34)
-          .padding({ left: 12, right: 12 })
-          .backgroundColor(this.chapterPanelOpen ? '#FF8A2A' : '#22395F')
-          .fontColor(this.chapterPanelOpen ? '#060B12' : '#F7F0E4')
-          .margin({ left: 6 })
-          .onClick(() => {
-            this.chapterPanelOpen = !this.chapterPanelOpen;
-          })
-        Button('撤')
-          .fontSize(15)
-          .width(40)
-          .height(34)
-          .backgroundColor('#22395F')
-          .fontColor('#F7F0E4')
-          .onClick(() => {
-            // 撤销最后书写的一笔（按笔画自身所在页，而非当前停留页——滚动后撤的才是刚写的）
-            const all = this.inkStore.all();
-            const lastStroke = all[all.length - 1];
-            this.inkStore.removeLast(lastStroke !== undefined ? lastStroke.pageIndex : this.readerPage);
-            this.inkRevision++;
-            this.saveInk();
-          })
-        Button('墨')
-          .fontSize(15)
-          .width(40)
-          .height(34)
-          .backgroundColor(this.penMode === PEN_INK ? '#34527D' : '#22395F')
-          .fontColor('#F7F0E4')
-          .margin({ left: 6 })
-          .onClick(() => {
-            this.penMode = PEN_INK;
-          })
-        Button('问')
-          .fontSize(15)
-          .width(40)
-          .height(34)
-          .backgroundColor(this.penMode === PEN_AI ? '#FF8A2A' : '#22395F')
-          .fontColor(this.penMode === PEN_AI ? '#060B12' : '#F7F0E4')
-          .margin({ left: 4 })
-          .onClick(() => {
-            this.penMode = PEN_AI;
-          })
-      }
         .width('100%')
-        .height(46)
-        .padding({ left: 14, right: 14 })
-        .alignItems(VerticalAlign.Center)
-        .backgroundColor('#101E33F0')
+        .height(34)
+        .padding({ left: 10, right: 10 })
+
+        Stack() {
+          // 草稿纸面：黑墨需要纸底（预览核验发现的对比度缺陷）
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor('#F7F5F0')
+          PageInkCanvas({
+            pageIndex: 0,
+            slotWidth: this.viewWidth > 0 ? this.viewWidth : 400,
+            slotHeight: DRAFT_CANVAS_H,
+            penMode: this.penMode,
+            store: this.draftStore,
+            pageTransform: {
+              scale: 1,
+              offsetX: 0,
+              offsetY: 0,
+              contentHeight: DRAFT_CANVAS_H
+            },
+            onGestureArea: (_p: number, _b: BBox): void => {
+            },
+            onStrokeAdded: (): void => {
+              this.saveDraft();
+            }
+          })
+            .width('100%')
+            .height('100%')
+        }
+        .width('100%')
+        .layoutWeight(1)
       }
       .width('100%')
       .height('100%')
-      .justifyContent(FlexAlign.End)
-      .hitTestBehavior(HitTestMode.Transparent)
+      .backgroundColor('#101E33')
+    }
+  }
+
+  // ---- BottomToolbar ----
+  @Builder
+  BottomToolbar() {
+    // 工具栏贴底：Stack 子组件默认居中会把工具栏悬在屏幕正中——
+    // 包一层全高透明容器， justifyContent End 落底，空白区放行触摸给长卷
+    Column() {
+      Row() {
+        Text(`${this.chapterTitle} · P${this.highWaterPage + 1}`)
+          .fontColor('#8CA2C0')
+          .fontSize(12)
+      Button('−')
+        .fontSize(11)
+        .width(22)
+        .height(22)
+        .padding(0)
+        .backgroundColor('#182A47')
+        .margin({ left: 6 })
+        .onClick(() => {
+          this.highWaterPage = Math.max(0, this.highWaterPage - 1);
+          this.saveProgress();
+        })
+      Button('+')
+        .fontSize(11)
+        .width(22)
+        .height(22)
+        .padding(0)
+        .backgroundColor('#182A47')
+        .margin({ left: 2 })
+        .onClick(() => {
+          this.highWaterPage = Math.min(this.pageTops.length - 1, this.highWaterPage + 1);
+          this.saveProgress();
+        })
+      Button(this.wholeBook ? '全书' : '已读')
+        .fontSize(11)
+        .height(22)
+        .padding({ left: 6, right: 6 })
+        .backgroundColor(this.wholeBook ? '#FF8A2A' : '#182A47')
+        .fontColor('#F7F0E4')
+        .margin({ left: 6 })
+        .onClick(() => {
+          this.wholeBook = !this.wholeBook;
+        })
+      if (this.questionCount > 0) {
+        Text(`问 ${this.questionCount}`)
+          .fontColor('#FF8A2A')
+          .fontSize(12)
+          .margin({ left: 6 })
+      }
+      Blank()
+      Button(this.indexButtonText())
+        .fontSize(this.indexStatus === '' ? 13 : 11)
+        .height(32)
+        .padding({ left: 10, right: 10 })
+        .backgroundColor('#22395F')
+        .fontColor(this.indexReady ? '#F7F0E4' : '#FF8A2A')
+        .opacity(this.indexBuilding ? 0.6 : 1)
+        .onClick(() => {
+          if (this.indexReady && this.indexCap < this.pageTops.length) {
+            this.extendIndex();
+          } else {
+            this.runOcrIndex();
+          }
+        })
+      Button('草')
+        .fontSize(15)
+        .height(34)
+        .padding({ left: 12, right: 12 })
+        .backgroundColor(this.draftOpen ? '#FF8A2A' : '#22395F')
+        .fontColor(this.draftOpen ? '#060B12' : '#F7F0E4')
+        .onClick(() => {
+          if (this.draftAnchor < 0) {
+            this.draftAnchor = this.readerPage;
+            this.draftEnd = this.readerPage;
+          }
+          this.draftOpen = true;
+        })
+      Button('夹')
+        .fontSize(15)
+        .height(34)
+        .padding({ left: 12, right: 12 })
+        .backgroundColor(this.chapterPanelOpen ? '#FF8A2A' : '#22395F')
+        .fontColor(this.chapterPanelOpen ? '#060B12' : '#F7F0E4')
+        .margin({ left: 6 })
+        .onClick(() => {
+          this.chapterPanelOpen = !this.chapterPanelOpen;
+        })
+      Button('撤')
+        .fontSize(15)
+        .width(40)
+        .height(34)
+        .backgroundColor('#22395F')
+        .fontColor('#F7F0E4')
+        .onClick(() => {
+          // 撤销最后书写的一笔（按笔画自身所在页，而非当前停留页——滚动后撤的才是刚写的）
+          const all = this.inkStore.all();
+          const lastStroke = all[all.length - 1];
+          this.inkStore.removeLast(lastStroke !== undefined ? lastStroke.pageIndex : this.readerPage);
+          this.inkRevision++;
+          this.saveInk();
+        })
+      Button('墨')
+        .fontSize(15)
+        .width(40)
+        .height(34)
+        .backgroundColor(this.penMode === PEN_INK ? '#34527D' : '#22395F')
+        .fontColor('#F7F0E4')
+        .margin({ left: 6 })
+        .onClick(() => {
+          this.penMode = PEN_INK;
+        })
+      Button('问')
+        .fontSize(15)
+        .width(40)
+        .height(34)
+        .backgroundColor(this.penMode === PEN_AI ? '#FF8A2A' : '#22395F')
+        .fontColor(this.penMode === PEN_AI ? '#060B12' : '#F7F0E4')
+        .margin({ left: 4 })
+        .onClick(() => {
+          this.penMode = PEN_AI;
+        })
+    }
+      .width('100%')
+      .height(46)
+      .padding({ left: 14, right: 14 })
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor('#101E33F0')
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.End)
+    .hitTestBehavior(HitTestMode.Transparent)
+  }
+
+  build() {
+    Stack() {
+      this.CanvasScroll()
+
+      this.LoadingLayer()
+
+      this.BubbleLayer()
+
+      this.BubblePins()
+
+      this.BubbleFoldBadge()
+
+      this.ClampLayer()
+
+      this.EdgeGestureStrip()
+
+      this.DraftBookmark()
+
+      this.ChapterPanel()
+
+      this.DraftPage()
+
+      this.BottomToolbar()
     }
     .width('100%')
     .height('100%')
