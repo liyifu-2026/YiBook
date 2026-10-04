@@ -71,3 +71,16 @@ export function bookDetailStats(qaCount: number, highWater: number, hasDraft: bo
   }
   return s;
 }
+
+// 失效条目（书单里有、文件已不在设备里）的封面标注；空串 = 不标注
+export function staleBadgeLabel(isStale: boolean): string {
+  return isStale ? '文件已丢失' : '';
+}
+
+// 详情页主按钮文案：失效书不该再邀请用户「开始阅读」，而应给出真正的出路
+export function detailPrimaryLabel(isStale: boolean, highWater: number): string {
+  if (isStale) {
+    return '从书架移除';
+  }
+  return highWater >= 0 ? `继续阅读 P${highWater + 1}` : '开始阅读';
+}

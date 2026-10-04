@@ -39,6 +39,7 @@ import { ReviewQueue, QuizCard } from '../review/ReviewQueue';
 import { QaRecord } from '../ai/Qa';
 import { bubblesFromQa, QaAnchor } from '../ink/BubbleModel';
 import { markersFromTocText } from '../pdf/ScanPipeline';
+import { diagnoseOpen, OpenDiagnosis, OpenProblem, PARSE_THREW } from '../pdf/OpenDiagnosis';
 
 // 长卷阅读壳：开书先只探测第 0 页定纵横比，立即全页渲染出首帧；
 // 整书裁剪分析（逐页降采样 → 墨迹包围盒 → 奇偶簇）转后台分批跑，完成后重排应用裁剪。
@@ -167,6 +168,14 @@ export struct ReaderView {
   @State indexCap: number = INDEX_MAX_PAGES;
   @State inkRevision: number = 0;
   @State loadPhase: number = 0; // 0=加载中 1=就绪 2=打不开
+  // 打不开时的成因与文案（pdf/OpenDiagnosis）：区分「文件没了」「格式不支持」「要密码」，
+  // 并决定还给不给「重试」——对「文件没了」重试是死路
+  @State failInfo: OpenDiagnosis = {
+    problem: OpenProblem.Unknown,
+    title: '这本书暂时打不开',
+    hint: '文件可能已损坏或格式不受支持',
+    canRetry: true
+  };
   private qaAll: Array<QaRecord> = [];
   private source: PdfPageSource = new PdfPageSource();
   private sampleGrids: Array<SampleGrid> = [];
@@ -234,13 +243,17 @@ export struct ReaderView {
       await this.prepareCore();
     } catch (err) {
       hilog.error(0x0000, 'ReaderView', `prepare failed: ${err}`);
+      this.failInfo = diagnoseOpen(PARSE_THREW, fileExists(this.pdfPath));
       this.loadPhase = 2;
     }
   }
 
   private async prepareCore(): Promise<void> {
     if (!this.source.open(this.pdfPath)) {
-      hilog.error(0x0000, 'ReaderView', `open pdf failed: ${this.pdfPath}`);
+      const code = this.source.lastParseCode();
+      this.failInfo = diagnoseOpen(code, fileExists(this.pdfPath));
+      hilog.error(0x0000, 'ReaderView',
+        `open pdf failed: ${this.pdfPath} code=${code} problem=${this.failInfo.problem}`);
       this.loadPhase = 2;
       return;
     }
@@ -1197,27 +1210,32 @@ export struct ReaderView {
           Image($r('app.media.cat'))
             .width(96)
             .height(96)
-          Text('这本书暂时打不开')
+          Text(this.failInfo.title)
             .fontColor('#F7F0E4')
             .fontSize(17)
             .margin({ top: 20 })
-          Text('文件可能已损坏或格式不受支持')
+          Text(this.failInfo.hint)
             .fontColor('#8CA2C0')
             .fontSize(12)
             .margin({ top: 8 })
-          Text('重试')
-            .fontColor('#060B12')
-            .fontSize(14)
-            .fontWeight(FontWeight.Bold)
-            .padding({ left: 26, right: 26, top: 11, bottom: 11 })
-            .borderRadius(12)
-            .backgroundColor('#FF8A2A')
-            .shadow({ radius: 0, color: '#060B12', offsetX: 3, offsetY: 4 })
-            .margin({ top: 24 })
-            .onClick(() => {
-              this.loadPhase = 0;
-              this.prepare();
-            })
+            .textAlign(TextAlign.Center)
+            .padding({ left: 32, right: 32 })
+          // 只有成因不是「文件没了/要密码」时才给重试：否则点了也是白点
+          if (this.failInfo.canRetry) {
+            Text('重试')
+              .fontColor('#060B12')
+              .fontSize(14)
+              .fontWeight(FontWeight.Bold)
+              .padding({ left: 26, right: 26, top: 11, bottom: 11 })
+              .borderRadius(12)
+              .backgroundColor('#FF8A2A')
+              .shadow({ radius: 0, color: '#060B12', offsetX: 3, offsetY: 4 })
+              .margin({ top: 24 })
+              .onClick(() => {
+                this.loadPhase = 0;
+                this.prepare();
+              })
+          }
           Text('点左上角返回书房')
             .fontColor('#5C7396')
             .fontSize(11)

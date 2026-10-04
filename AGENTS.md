@@ -33,7 +33,7 @@
     4. 运行（**平板必须先解锁**，锁屏会报 `10106102`）：`hdc shell "aa test -b com.leaif.yibook -m entry_test -s unittest OpenHarmonyTestRunner -s timeout 180000"`
     5. **用完必须还原**：`git checkout HEAD -- build-profile.json5`（否则签名口令会被提交）
 - SDK：HarmonyOS 6.1.1(24)（build-profile  compatibleSdkVersion）
-- 测试框架：`@ohos/hypium`（本地单测在 `entry/src/test/`，入口 `List.test.ets` 的 `testsuite()` 注册；当前 36 个测试文件 / 131 用例）
+- 测试框架：`@ohos/hypium`（本地单测在 `entry/src/test/`，入口 `List.test.ets` 的 `testsuite()` 注册；当前 37 个测试文件 / 138 用例）
 - 真机部署：hdc 在 `F:\deveco\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe`；一键脚本 `bash device-run.sh`（构建→安装→启动→hilog，`log` 参数只看日志）；`bash devtap.sh "<文本>" [dy]` 按文本定位组件点按（真机冒烟）。前置：DevEco 里 File > Project Structure > Signing Configs 勾选 Automatically generate signature——真机 profile 绑定「包名+设备 UDID」，OpenHarmony 自签材料不适用于华为商用平板。包名 `com.leaif.yibook`，测试平板 TGR-W10。
 - 双 agent 协作边界：UI 视觉由独立 agent 负责（`entry/src/main/ets/view/` 下的 LibraryView/ReaderView/StudyRoomView、`ink/PageInkCanvas`、`pages/Index`）；功能/管线归本工程。**注：2026-10-04 已把源码从扁平的 `reading/` 拆为 8 个业务域，界面文件路径变为 `view/`（详见 `ARCHITECTURE.md`）**。改共享文件前先 `ls -lt entry/src/main/ets/**` 确认对方已静默 ≥2 分钟，部署前同样，避免把半成品打进包。
 - 书写交互铁律（用户定调，无可妥协）：**手指永远滚动、只有触控笔才书写**——PageInkCanvas 用 `touches[i].sourceTool === SourceTool.Pen` 过滤（SDK TouchObject.sourceTool 可用，此前误判不可用）；笔的颜色/粗细配置放阅读之外（配好再进来），橡皮擦放阅读之内——UI 侧约定。
@@ -48,6 +48,7 @@
 - 长卷画布必须分块（CHUNK_MAX_VP=1500）：单 Stack 高超 GPU 纹理上限（约 4096-16384px）会**静默整块不渲染**（24 页教材 16377vp 全空白且日志无错，2 页样张 1644vp 恰好低于限值而漏判）。
 - pdfService 的 getPagePixelMap 必须立即拷贝为独立 PixelMap（readPixelsToBuffer→createPixelMap，顺带 alpha 压平成白底）：文本页常为透明底叠深色画布不可见；严禁 writeBufferToPixels 回写（会损坏显示通道）。
 - 开书先渲染后分析：只探测第 0 页定纵横比立即出首帧；整书版式（裁剪）分析转后台分批让出 UI 线程，进度显示在索引按钮。
+- 失效书目（书单有条目、文件已不在设备）：**只因成因说话**——文件不存在或 `PARSE_ERROR_FILE` → 「这本书的文件已丢失/读不了」且**不给重试**（点了也是白点），指路回书房移除；格式不支持、要密码各有其文案；`PARSE_ERROR_HANDLER`/未知维持决策 #38 的通用失败态（「这本书暂时打不开」+ 重试）。书架在封面下标注「文件已丢失」，详情页主按钮由「开始阅读」换成「从书架移除」。**只标记不自动清理**——删书会级联清掉进度/墨迹/草稿/OCR/问答，是否放弃由用户决定。成因判定是纯逻辑（`pdf/OpenDiagnosis.ets`），改文案改映射都在那里改并补单测。详见决策 #42。
 
 ## 实验素材
 

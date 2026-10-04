@@ -33,6 +33,7 @@ import qaTest from './Qa.test';
 import bookIndexerTest from './BookIndexer.test';
 import chunkWindowTest from './ChunkWindow.test';
 import presentationMathTest from './PresentationMath.test';
+import openDiagnosisTest from './OpenDiagnosis.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -70,4 +71,5 @@ export default function testsuite() {
   bookIndexerTest();
   chunkWindowTest();
   presentationMathTest();
+  openDiagnosisTest();
 }

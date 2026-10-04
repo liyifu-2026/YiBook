@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { indexButtonLabel, coverCellScale, coverCellShift, shelfColumns,
-  coverCellWidthPct, bookDetailStats } from '../main/ets/view/PresentationMath';
+  coverCellWidthPct, bookDetailStats, staleBadgeLabel, detailPrimaryLabel } from '../main/ets/view/PresentationMath';
 
 // 视图层纯呈现计算的行为网。
 // 这些分支原本埋在 1949 行 / 960 行的 ArkUI 组件里，零测试覆盖。
@@ -59,6 +59,18 @@ export default function presentationMathTest() {
       expect(bookDetailStats(3, 0, false)).assertEqual('问答 3 · 已读 P1');
       expect(bookDetailStats(3, -1, true)).assertEqual('问答 3 · 有草稿');
       expect(bookDetailStats(3, 9, true)).assertEqual('问答 3 · 已读 P10 · 有草稿');
+    });
+
+    it('marks a stale entry and re-routes its primary action', 0, () => {
+      expect(staleBadgeLabel(true)).assertEqual('文件已丢失');
+      expect(staleBadgeLabel(false)).assertEqual('');
+      // 文件已不在设备里时，「开始阅读」是骗人的；换成真正的出路
+      expect(detailPrimaryLabel(true, 9)).assertEqual('从书架移除');
+      expect(detailPrimaryLabel(true, -1)).assertEqual('从书架移除');
+      // 正常书维持原样
+      expect(detailPrimaryLabel(false, 9)).assertEqual('继续阅读 P10');
+      expect(detailPrimaryLabel(false, 0)).assertEqual('继续阅读 P1');
+      expect(detailPrimaryLabel(false, -1)).assertEqual('开始阅读');
     });
   });
 }

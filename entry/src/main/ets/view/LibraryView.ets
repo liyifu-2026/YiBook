@@ -9,9 +9,9 @@ import { Palette, paletteOf } from '../core/Theme';
 import { PdfPageSource } from '../pdf/PdfPageSource';
 import { downsampleGrid } from '../pdf/CropPipeline';
 import { image } from '@kit.ImageKit';
-import { readJsonFile, writeJsonFile } from '../core/JsonFile';
+import { fileExists, readJsonFile, writeJsonFile } from '../core/JsonFile';
 import { coverCellScale, coverCellShift, shelfColumns, coverCellWidthPct,
-  bookDetailStats } from './PresentationMath';
+  bookDetailStats, staleBadgeLabel, detailPrimaryLabel } from './PresentationMath';
 
 // 书房 · 夜城风（扁平矢量 + 波普 + Lo-fi 嘻哈专辑封面）：封面墙 = 深夜里一排排亮着暖光的窗。
 // 交互纪律：封面即按钮（点 = 翻开这本书的档案，继续阅读在里面）；长按 = 菜单（删除）；
@@ -46,6 +46,7 @@ export struct LibraryView {
   @State hoverKey: string = '';
   @State breathe: boolean = false;
   @State confirmDeleteId: number = -1;
+  @State staleIds: Array<number> = []; // 文件已丢失的书：书单里有、设备上没有
   @StorageLink('nightMode') nightMode: boolean = true;
   @State thumbs: Map<string, boolean> = new Map<string, boolean>();
   private model: BookshelfModel = new BookshelfModel();
@@ -253,6 +254,24 @@ export struct LibraryView {
 
   private refresh(): void {
     this.books = this.model.list();
+    this.refreshStale();
+  }
+
+  // 失效条目：书单里有这条，但文件已经不在设备里。
+  // 这里只「标记」不「清理」——删书会级联清掉进度/墨迹/问答，放不放弃该由用户自己决定；
+  // 详情页会把主按钮从「开始阅读」换成「从书架移除」，给出真正的出路。
+  private refreshStale(): void {
+    const out: Array<number> = [];
+    for (const b of this.books) {
+      if (!fileExists(b.path)) {
+        out.push(b.id);
+      }
+    }
+    this.staleIds = out;
+  }
+
+  private isStale(book: BookRecord): boolean {
+    return this.staleIds.indexOf(book.id) >= 0;
   }
 
   private async importPdf(): Promise<void> {
@@ -481,6 +500,19 @@ export struct LibraryView {
     return null;
   }
 
+  private detailStale(): boolean {
+    const b = this.detailBook();
+    return b !== null && this.isStale(b);
+  }
+
+  // 失效书的出路：从书架移除（长按封面 →「删除这本书」是同一动作的另一入口）
+  private removeStaleFromDetail(): void {
+    const b = this.detailBook();
+    if (b !== null) {
+      this.removeBook(b);
+    }
+  }
+
   private detailStats(): string {
     return bookDetailStats(this.bookQa.length, this.highWater,
       this.draftInfo !== null && this.draftInfo.strokes > 0);
@@ -532,7 +564,12 @@ export struct LibraryView {
         .width('100%')
         .margin({ top: 12 })
 
-      if (this.progress.has(book.id)) {
+      if (this.isStale(book)) {
+        Text(staleBadgeLabel(true))
+          .fontColor('#8CA2C0')
+          .fontSize(10)
+          .margin({ top: 4 })
+      } else if (this.progress.has(book.id)) {
         Text(`读到 P${this.progress.get(book.id)! + 1}`)
           .fontColor(ORANGE)
           .fontSize(10)
@@ -794,7 +831,7 @@ export struct LibraryView {
             .margin({ top: 8 })
 
           Row() {
-            Text(this.highWater >= 0 ? `继续阅读 P${this.highWater + 1}` : '开始阅读')
+            Text(detailPrimaryLabel(this.detailStale(), this.highWater))
               .fontColor(INK)
               .fontSize(15)
               .fontWeight(FontWeight.Bold)
@@ -814,7 +851,11 @@ export struct LibraryView {
             }
           })
           .onClick(() => {
-            this.continueReading();
+            if (this.detailStale()) {
+              this.removeStaleFromDetail();
+            } else {
+              this.continueReading();
+            }
           })
 
           if (this.draftInfo !== null && this.draftInfo.strokes > 0) {

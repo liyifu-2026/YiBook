@@ -206,3 +206,4 @@ node "F:\deveco\DevEco Studio\tools\hvigor\bin\hvigorw.js" assembleHap
 4. ~~`LibraryView_new.ets` 草稿待定~~ **已删除**（2026-10-04）。它是截断的残缺草稿：82 个开括号对 71 个闭括号、**没有 `build()` 方法**、末尾停在表达式中间，根本无法编译；而现行的 `view/LibraryView.ets` 已远超它（953+ 行、5 个 `@Builder`、主题切换/封面轮换/缩略图/删除确认）。内容仍可从基线提交 `924d82a:LibraryView_new.ets` 取回。
 5. **`entry/src/main/resources/rawfile/sample_textbook.pdf` 实为扫描版**（无文字层、书签为逐页垃圾），文本锚定与章节提取的真验证仍需一份**带文字层 + 真书签**的原生 PDF。
 6. **`book/BookIndexer` 已补单测**（13 个用例，`build` 8 个 + `ensureOcr` 5 个），但它依赖的 `pdf/PdfPageSource` 面向真实 PDF 的解析行为**只能上真机验**——见 `entry/src/ohosTest/ets/test/NativePdf.test.ets`（3 个用例，已实测通过）。
+7. **书键 = 文件路径哈希**（`'b' + textHash(path)`），而导入路径带时间戳（`book_<Date.now()>.pdf`）——**同一本书重新导入会得到新键，旧注解（墨迹/问答/进度/OCR/章节/索引）全部不可达**。目前只靠「从书架移除」时的级联清理避免残留。若要让注解随书走，书键应换成内容指纹（`LibraryView.fileHash` 已有「尺寸 + djb2 全字节」的实现，一次性成本可接受）。

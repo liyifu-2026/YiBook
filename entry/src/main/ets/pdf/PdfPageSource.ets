@@ -6,6 +6,7 @@ import { BBox } from './CropMath';
 import { SampleGrid, downsampleGrid, regionForBBox } from './CropPipeline';
 import { OutlineMarker } from '../core/DocModel';
 import { PageImageSource } from '../core/Ports';
+import { PARSE_SUCCESS, PARSE_THREW } from './OpenDiagnosis';
 
 export interface PageSize {
   width: number;
@@ -19,6 +20,9 @@ export interface PageSample {
 
 export class PdfPageSource implements PageImageSource {
   private doc: pdfService.PdfDocument | null = null;
+  // 最近一次 open() 的 pdfService.ParseResult：失败成因判定（pdf/OpenDiagnosis）需要它。
+  // 原先只把码写进日志、对外只回 boolean，于是「文件没了」和「格式不对」无法区分。
+  private lastCode: number = PARSE_SUCCESS;
 
   open(path: string): boolean {
     const doc = new pdfService.PdfDocument();
@@ -28,15 +32,22 @@ export class PdfPageSource implements PageImageSource {
       result = Number(r);
     } catch (err) {
       hilog.error(0x0000, 'PdfPageSource', `loadDocument threw: ${err} path=${path}`);
+      this.lastCode = PARSE_THREW;
       return false;
     }
     // PARSE_SUCCESS=0（SDK d.ts 字面量）；不用枚举常量比较，防运行时常量解析差异
     if (result !== 0) {
       hilog.error(0x0000, 'PdfPageSource', `loadDocument code=${result} path=${path}`);
+      this.lastCode = result;
       return false;
     }
+    this.lastCode = PARSE_SUCCESS;
     this.doc = doc;
     return true;
+  }
+
+  lastParseCode(): number {
+    return this.lastCode;
   }
 
   close(): void {
