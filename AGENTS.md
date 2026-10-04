@@ -26,6 +26,12 @@
   - 本地单测：`node "F:\deveco\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p module=entry@default test`
   - 用例结果唯一凭据：`entry/.test/default/intermediates/test/coverage_data/test_result.txt`（守护进程日志不含 pass/fail）
   - 无设备编译验证（改 ArkUI/kit 相关代码后必跑）：`node "F:\deveco\DevEco Studio\tools\hvigor\bin\hvigorw.js" assembleHap`
+  - 真机插桩测试（ohosTest，验 `@kit` 能力——如 PDF 文字层/书签：本地单测跑不了 `@kit`，这类验证只能上真机）：
+    1. 临时回填签名：`cp .signing-config.backup.json5 build-profile.json5`
+    2. 构建：`node "F:\deveco\DevEco Studio\tools\hvigor\bin\hvigorw.js" assembleHap`，再 `... --mode module -p module=entry@ohosTest -p product=default assembleHap`
+    3. 安装：`hdc install -r entry/build/default/outputs/default/entry-default-signed.hap`；`hdc install -r entry/build/default/outputs/ohosTest/entry-ohosTest-signed.hap`
+    4. 运行（**平板必须先解锁**，锁屏会报 `10106102`）：`hdc shell "aa test -b com.leaif.yibook -m entry_test -s unittest OpenHarmonyTestRunner -s timeout 180000"`
+    5. **用完必须还原**：`git checkout HEAD -- build-profile.json5`（否则签名口令会被提交）
 - SDK：HarmonyOS 6.1.1(24)（build-profile  compatibleSdkVersion）
 - 测试框架：`@ohos/hypium`（本地单测在 `entry/src/test/`，入口 `List.test.ets` 的 `testsuite()` 注册；当前 34 个测试文件 / 119 用例）
 - 真机部署：hdc 在 `F:\deveco\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe`；一键脚本 `bash device-run.sh`（构建→安装→启动→hilog，`log` 参数只看日志）；`bash devtap.sh "<文本>" [dy]` 按文本定位组件点按（真机冒烟）。前置：DevEco 里 File > Project Structure > Signing Configs 勾选 Automatically generate signature——真机 profile 绑定「包名+设备 UDID」，OpenHarmony 自签材料不适用于华为商用平板。包名 `com.leaif.yibook`，测试平板 TGR-W10。
@@ -47,5 +53,5 @@
 
 - `entry/src/main/resources/rawfile/sample_scan.pdf`：2 页扫描手写件（无文字层）——渲染/裁白边/连续滚动验证。
 - `entry/src/main/resources/rawfile/sample_textbook.pdf`：《深入浅出程序设计竞赛（基础篇）》前 24 页书样（594×840pt）。**原书实为扫描版**：无文字层（M4 检索不可用，走二期 OCR 管线）、书签为逐页垃圾书签（已因此给 ChapterModel 加了垃圾书签防御：标记密度 > 页数一半视为无目录）。完整原书在 `F:\Leaif\书柜\`，勿入 rawfile（70MB）。
-- 文本锚定/章节提取的真验证仍需**带文字层+真书签的原生 PDF**。
+- `entry/src/main/resources/rawfile/sample_native.pdf`：**带文字层 + 真书签的原生 PDF**，自《Go语言学习笔记》正文节选 20 页（第 0..19 页，约 485KB）——文本锚定与章节提取的真验证素材。书签已重映射：10 条解析为 8 个去重页 `[1,3,4,5,6,9,16,18]`（第 16 页有 3 条，验同页去重）。真机插桩测试见 `entry/src/ohosTest/ets/test/NativePdf.test.ets`。**已实测结论**（TGR-W10 / API 24，2026-10-04）：`@kit.PDFKit` 20 页全部读出文字（共 12420 字），书签页码与离线 pypdf 结果逐条吻合，`chaptersFromOutline` 切出 9 章且连续覆盖 0..19。**注意：这是版权书籍节选，不要再扩大页数，也不要提交完整原书。**
 - `Notes_extracted/`：华为官方 Notes 模板 v1.0.5（Pen Kit 集成范例在 `components/richeditor`，勿直接引入 product/phone）。
