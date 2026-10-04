@@ -2,7 +2,7 @@ import { image } from '@kit.ImageKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { pageOffsets, totalHeight, pageAt } from '../pdf/ContinuousLayout';
-import { renderWindow } from '../pdf/RenderWindow';
+import { renderWindow, absoluteScrollOffset } from '../pdf/RenderWindow';
 import { buildPageChunks, visibleChunks, pagesToRelease, PageChunk, CHUNK_MAX_VP,
   CHUNK_WINDOW_MARGIN } from '../pdf/ChunkWindow';
 import { indexButtonLabel } from './PresentationMath';
@@ -86,6 +86,9 @@ export struct ReaderView {
   @State visibleChunks: Array<PageChunk> = [];
   private allChunks: Array<PageChunk> = [];
   private windowPages: Array<number> = [];
+  // 上一帧的渲染窗口；只有它变了才重算 visibleChunks（见 refreshWindow）
+  private windowFirst: number = -1;
+  private windowLast: number = -1;
   @State highWaterPage: number = 0;
   @State readerPage: number = 0;
   @State scrollY: number = 0;
@@ -320,6 +323,7 @@ export struct ReaderView {
       }
     }
     this.bubbles = bubblesFromQa(anchors, this.inkKey, RESTORED_ID_BASE);
+    this.trackScrollForBubbles();
     const isNew = !this.hasProgress();
     this.loadProgress();
     const saved = this.loadChapters(n);
@@ -452,6 +456,9 @@ export struct ReaderView {
     this.transforms = transforms;
     this.allChunks = this.buildChunks();
     this.layoutReady = true;
+    // 版式重算后位图全被清空，必须强制重算一次渲染窗口
+    this.windowFirst = -1;
+    this.windowLast = -1;
     this.refreshWindow(this.scrollY);
   }
 
@@ -474,8 +481,33 @@ export struct ReaderView {
     if (!this.layoutReady) {
       return;
     }
+    // 位置：**没有气泡时一个 @State 都不写**（纯阅读零重渲染）；
+    // 有气泡时气泡要跟着内容走，才逐帧同步 scrollY。
+    if (this.bubbles.length > 0 && Math.abs(y - this.scrollY) >= 0.5) {
+      this.scrollY = y;
+    }
     const viewport = this.viewportHeight > 0 ? this.viewportHeight : 600;
     const range = renderWindow(this.pageTops, y, viewport, 1);
+    const page = pageAt(this.pageTops, y);
+    // 这三个只在取值真的变了才写；逐帧写 @State 会让整棵树每帧重渲染（卡顿来源）
+    if (page !== this.readerPage) {
+      this.readerPage = page;
+    }
+    const hw = updateHighWater(this.highWaterPage, page);
+    if (hw !== this.highWaterPage) {
+      this.highWaterPage = hw;
+    }
+    const idx = chapterAt(this.chapters, this.highWaterPage);
+    if (idx >= 0 && this.chapters[idx].title !== this.chapterTitle) {
+      this.chapterTitle = this.chapters[idx].title;
+    }
+    // 渲染窗口没变就别碰 visibleChunks：它的键一变，整块的 PageInkCanvas 会被重挂，
+    // 既打断正在写的笔画，也是滑动时的主要卡顿来源
+    if (range.first === this.windowFirst && range.last === this.windowLast) {
+      return;
+    }
+    this.windowFirst = range.first;
+    this.windowLast = range.last;
     const indices: Array<number> = [];
     for (let i = range.first; i <= range.last; i++) {
       indices.push(i);
@@ -491,12 +523,6 @@ export struct ReaderView {
     }
     this.windowPages = indices;
     this.refreshChunks();
-    this.readerPage = pageAt(this.pageTops, y);
-    this.highWaterPage = updateHighWater(this.highWaterPage, this.readerPage);
-    const idx = chapterAt(this.chapters, this.highWaterPage);
-    if (idx >= 0 && this.chapters[idx].title !== this.chapterTitle) {
-      this.chapterTitle = this.chapters[idx].title;
-    }
   }
 
   private requestPage(i: number): void {
@@ -531,6 +557,7 @@ export struct ReaderView {
     this.questionCount++;
     const id = this.questionCount;
     this.bubbles.push(bubbleOnQuestion(id, pageIndex, bbox.top));
+    this.trackScrollForBubbles();
     this.gestureBoxes.set(id, bbox);
     this.syncBreathe();
     hilog.info(0x0000, 'ReaderView',
@@ -1146,9 +1173,26 @@ export struct ReaderView {
       this.indexCap, this.pageTops.length);
   }
 
+  private liveOffset(): number {
+    try {
+      return this.scroller.currentOffset().yOffset;
+    } catch (err) {
+      return this.scrollY;
+    }
+  }
+
+  // 气泡是覆盖层，必须靠 scrollY 这个 @State 逐帧重算才能跟着内容走。
+  // 但**没有气泡时就没有任何理由逐帧写状态**——纯阅读时零状态写入等于零重渲染，
+  // 这是「翻起来顺不顺」的关键。所以气泡一出现就先把位置补正一次。
+  private trackScrollForBubbles(): void {
+    if (this.bubbles.length > 0) {
+      this.scrollY = this.liveOffset();
+    }
+  }
+
   private clampAimPage(): number {
     const vp = this.viewportHeight > 0 ? this.viewportHeight : 600;
-    return pageAt(this.pageTops, this.scrollY + vp / 2);
+    return pageAt(this.pageTops, this.liveOffset() + vp / 2);
   }
 
   private confirmClamp(): void {
@@ -1248,8 +1292,10 @@ export struct ReaderView {
       this.rebuildLayout();
     })
     .onScroll((_xOffset: number, yOffset: number) => {
-      this.scrollY = yOffset;
-      this.refreshWindow(yOffset);
+      // 铁律见 pdf/RenderWindow.absoluteScrollOffset：onScroll 的入参是**增量**，
+      // 绝对位置只能问滚动容器本身。曾经直接用 yOffset，导致整卷只有第一块有内容。
+      const y = absoluteScrollOffset(this.liveOffset(), this.scrollY, yOffset);
+      this.refreshWindow(y);
       // 进度节流落盘：每前进 5 页写一次，杀进程最多丢 5 页水位
       if (this.highWaterPage - this.lastSavedWater >= 5) {
         this.lastSavedWater = this.highWaterPage;
