@@ -459,7 +459,9 @@ export struct ReaderView {
     // 版式重算后位图全被清空，必须强制重算一次渲染窗口
     this.windowFirst = -1;
     this.windowLast = -1;
-    this.refreshWindow(this.scrollY);
+    // 位置必须取**实时绝对 offset**：this.scrollY 只在有气泡时才维护（纯阅读零重渲染），
+    // 读它会把渲染窗口错误地算回 y≈0，眼前整屏变占位空白。
+    this.refreshWindow(this.liveOffset());
   }
 
   // 分块规则与 CHUNK_MAX_VP 约束见 pdf/ChunkWindow（带单测）
@@ -468,12 +470,16 @@ export struct ReaderView {
   }
 
   // 窗口与占位规则见 pdf/ChunkWindow.visibleChunks（带单测）
-  private refreshChunks(): void {
+  //
+  // y 必须**由调用方按绝对滚动位置传进来**，绝不能读 this.scrollY：scrollY 是给气泡跟随
+  // 用的 @State，纯阅读时按设计不逐帧写（保持零重渲染），读它就会永远是 0 —— 于是所有块
+  // 都被判为「窗口外」、pages 清空，眼前整屏都是等高空占位，表现为「根本看不到内容」。
+  private refreshChunks(y: number): void {
     const ready: Array<boolean> = [];
     for (let i = 0; i < this.pageImages.length; i++) {
       ready.push(this.pageImages[i] !== null);
     }
-    this.visibleChunks = visibleChunks(this.allChunks, this.scrollY, this.viewportHeight,
+    this.visibleChunks = visibleChunks(this.allChunks, y, this.viewportHeight,
       ready, CHUNK_WINDOW_MARGIN);
   }
 
@@ -522,7 +528,7 @@ export struct ReaderView {
       this.pageImages[i] = null;
     }
     this.windowPages = indices;
-    this.refreshChunks();
+    this.refreshChunks(y);
   }
 
   private requestPage(i: number): void {
@@ -542,8 +548,9 @@ export struct ReaderView {
       this.pending.delete(i);
       if (pm !== null && i < this.pageImages.length) {
         this.pageImages[i] = pm;
-        // 块键含已就绪位图数：位图就位后重算可见块，触发 ForEach 键变化重建
-        this.refreshChunks();
+        // 块键含已就绪位图数：位图就位后重算可见块，触发 ForEach 键变化重建。
+        // 位置取实时绝对 offset——**不能读 scrollY**（见 refreshChunks 注释）。
+        this.refreshChunks(this.liveOffset());
       } else {
         hilog.error(0x0000, 'ReaderView', `render page ${i} null pm`);
       }
