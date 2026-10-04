@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { bubbleOnQuestion, markAnswerReady, markSettled, projectToViewport,
-  anchorScrollY, foldBubbles, bubblesFromQa, BubblePhase, QuestionBubble } from '../main/ets/ink/BubbleModel';
+  anchorScrollY, bubbleScreenY, bubbleDotSize, bubbleDotOpacity,
+  foldBubbles, bubblesFromQa, BubblePhase, QuestionBubble } from '../main/ets/ink/BubbleModel';
 
 interface QaLite {
   bookKey: string;
@@ -64,6 +65,29 @@ export default function bubbleModelTest() {
 
     it('restores nothing from empty records', 0, () => {
       expect(bubblesFromQa([], 'b1', 1000000).length).assertEqual(0);
+    });
+
+    it('projects a bubble anchor through the page slot into the viewport', 0, () => {
+      // 页顶 1000、槽高 800、栅格 200 行、锚点第 50 行 → 长卷 y = 1000 + 1/4*800 = 1200
+      expect(bubbleScreenY(1000, 800, 200, 50, 1000, 600)).assertEqual(200);
+      expect(bubbleScreenY(1000, 800, 200, 50, 1200, 600)).assertEqual(0);
+      // 滚出视野 → -1（调用方把气泡收成图钉）
+      expect(bubbleScreenY(1000, 800, 200, 50, 500, 600)).assertEqual(-1);
+      expect(bubbleScreenY(1000, 800, 200, 50, 2000, 600)).assertEqual(-1);
+      // 栅格行数缺失时退化为页顶，且不产生 NaN
+      expect(bubbleScreenY(1000, 800, 0, 50, 1000, 600)).assertEqual(0);
+      // 布局完成前视口高为 0：必须按 600 兜底，否则锚点会被误判为「滚出视野」而钉住
+      expect(bubbleScreenY(1000, 800, 200, 50, 1000, 0)).assertEqual(200);
+      expect(bubbleScreenY(1000, 800, 200, 50, 1000, -5)).assertEqual(200);
+    });
+
+    it('bubble dot shrinks as it settles, and dims while thinking', 0, () => {
+      expect(bubbleDotSize(BubblePhase.Thinking)).assertEqual(16);
+      expect(bubbleDotSize(BubblePhase.Done)).assertEqual(14);
+      expect(bubbleDotSize(BubblePhase.Settled)).assertEqual(8);
+      expect(bubbleDotOpacity(BubblePhase.Thinking)).assertEqual(0.6);
+      expect(bubbleDotOpacity(BubblePhase.Done)).assertEqual(1);
+      expect(bubbleDotOpacity(BubblePhase.Settled)).assertEqual(1);
     });
   });
 }

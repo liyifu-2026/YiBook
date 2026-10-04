@@ -10,6 +10,8 @@ import { PdfPageSource } from '../pdf/PdfPageSource';
 import { downsampleGrid } from '../pdf/CropPipeline';
 import { image } from '@kit.ImageKit';
 import { readJsonFile, writeJsonFile } from '../core/JsonFile';
+import { coverCellScale, coverCellShift, shelfColumns, coverCellWidthPct,
+  bookDetailStats } from './PresentationMath';
 
 // 书房 · 夜城风（扁平矢量 + 波普 + Lo-fi 嘻哈专辑封面）：封面墙 = 深夜里一排排亮着暖光的窗。
 // 交互纪律：封面即按钮（点 = 翻开这本书的档案，继续阅读在里面）；长按 = 菜单（删除）；
@@ -480,26 +482,16 @@ export struct LibraryView {
   }
 
   private detailStats(): string {
-    let s = `问答 ${this.bookQa.length}`;
-    if (this.highWater >= 0) {
-      s += ` · 已读 P${this.highWater + 1}`;
-    }
-    if (this.draftInfo !== null && this.draftInfo.strokes > 0) {
-      s += ' · 有草稿';
-    }
-    return s;
+    return bookDetailStats(this.bookQa.length, this.highWater,
+      this.draftInfo !== null && this.draftInfo.strokes > 0);
   }
 
-  // 封面的按压/悬停形变：按下去落进自己的影子，悬停时从影子里浮起
   private cellScale(key: string): number {
-    if (this.pressedKey === key) {
-      return 0.97;
-    }
-    return this.hoverKey === key ? 1.03 : 1.0;
+    return coverCellScale(key, this.pressedKey, this.hoverKey);
   }
 
   private cellShift(key: string): number {
-    return this.pressedKey === key ? 4 : 0;
+    return coverCellShift(key, this.pressedKey);
   }
 
   // ---------- 封面单元（画框 + 硬阴影 + 最少文字） ----------
@@ -615,27 +607,12 @@ export struct LibraryView {
     .bindContextMenu(this.cellMenu(book), ResponseType.LongPress)
   }
 
-  // 书越少列越少：封面越大，画廊感越强；书多了回归密排封面墙
   private shelfCols(): number {
-    const n = this.books.length;
-    if (n <= 3) {
-      return 3;
-    }
-    if (n <= 8) {
-      return 4;
-    }
-    return 5;
+    return shelfColumns(this.books.length);
   }
 
   private cellWidthPct(): string {
-    const cols = this.shelfCols();
-    if (cols === 3) {
-      return '29%';
-    }
-    if (cols === 4) {
-      return '21.5%';
-    }
-    return '17%';
+    return coverCellWidthPct(this.shelfCols());
   }
 
   // ---------- 书柜封面墙 ----------

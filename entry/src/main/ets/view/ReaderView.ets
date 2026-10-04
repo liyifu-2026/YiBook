@@ -3,6 +3,9 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { pageOffsets, totalHeight, pageAt } from '../pdf/ContinuousLayout';
 import { renderWindow } from '../pdf/RenderWindow';
+import { buildPageChunks, visibleChunks, pagesToRelease, PageChunk, CHUNK_MAX_VP,
+  CHUNK_WINDOW_MARGIN } from '../pdf/ChunkWindow';
+import { indexButtonLabel } from './PresentationMath';
 import { updateHighWater } from '../book/ReadingProgress';
 import { transformForCrop, DisplayTransform } from '../pdf/ReaderGeometry';
 import { findInkBBox, clusterByParity, BBox } from '../pdf/CropMath';
@@ -12,8 +15,8 @@ import { chaptersFromOutline, chapterAt, split, mergeNext, rename, moveBoundary 
 import { Chapter, OutlineMarker } from '../core/DocModel';
 import { InkStore } from '../ink/InkStore';
 import { PageInkCanvas } from '../ink/PageInkCanvas';
-import { bubbleOnQuestion, markAnswerReady, markSettled, anchorScrollY, projectToViewport,
-  foldBubbles, BubblePhase, QuestionBubble } from '../ink/BubbleModel';
+import { bubbleOnQuestion, markAnswerReady, markSettled, bubbleScreenY, bubbleDotSize,
+  bubbleDotOpacity, foldBubbles, BubblePhase, QuestionBubble } from '../ink/BubbleModel';
 import { assemblePrompt, SourceBlock } from '../ai/PromptAssembler';
 import { parseAnswer } from '../ai/AnswerParser';
 import { LlmClient, ByokStore, ByokConfig, DEFAULT_BASE_URL, DEFAULT_MODEL } from '../ai/LlmClient';
@@ -59,16 +62,7 @@ const SWIPE_THRESHOLD = 60;
 const DRAFT_CANVAS_H = 1500;
 // 跨会话恢复气泡的 id 起点（避开会话内新提问 id）
 const RESTORED_ID_BASE = 1000000;
-// 单块画布高度上限（vp）。GPU 纹理上限约 4096-16384px，超限整块不渲染：
-// 24 页教材 16377vp(=32754px) 曾导致整卷空白。滚动内容按此分块，只挂可见块。
-const CHUNK_MAX_VP = 1500;
-
-interface PageChunk {
-  top: number;
-  height: number;
-  pages: Array<number>;
-  imgKey: number;
-}
+// 长卷分块上限 CHUNK_MAX_VP、可见窗口余量、PageChunk 均已抽到 pdf/ChunkWindow（带单测）。
 
 // 每个气泡独立的问答卡状态：并发提问互不串扰
 interface BubbleCard {
@@ -393,60 +387,19 @@ export struct ReaderView {
     this.refreshWindow(this.scrollY);
   }
 
-  // 把页面槽位按 CHUNK_MAX_VP 分块：块是滚动内容里的直接子节点，
-  // 避免单个巨型 Stack 超过 GPU 纹理上限而整块不渲染。
+  // 分块规则与 CHUNK_MAX_VP 约束见 pdf/ChunkWindow（带单测）
   private buildChunks(): Array<PageChunk> {
-    const out: Array<PageChunk> = [];
-    let pages: Array<number> = [];
-    let top = 0;
-    let bottom = 0;
-    for (let i = 0; i < this.pageTops.length; i++) {
-      const pt = this.pageTops[i];
-      const pb = pt + this.slotHeights[i];
-      if (pages.length === 0) {
-        top = pt;
-        bottom = pb;
-        pages.push(i);
-      } else if (pb - top <= CHUNK_MAX_VP) {
-        bottom = pb;
-        pages.push(i);
-      } else {
-        out.push({ top: top, height: bottom - top, pages: pages, imgKey: 0 });
-        top = pt;
-        bottom = pb;
-        pages = [i];
-      }
-    }
-    if (pages.length > 0) {
-      out.push({ top: top, height: bottom - top, pages: pages, imgKey: 0 });
-    }
-    return out;
+    return buildPageChunks(this.pageTops, this.slotHeights, CHUNK_MAX_VP);
   }
 
-  // 重算可见块。关键：所有块都要出现在 Column 里（窗口外的块渲染为等高空占位），
-  // 否则滚动内容总高≈一屏，长卷根本滚不下去；占位块无绘制内容，不触发纹理上限。
+  // 窗口与占位规则见 pdf/ChunkWindow.visibleChunks（带单测）
   private refreshChunks(): void {
-    const viewport = this.viewportHeight > 0 ? this.viewportHeight : 600;
-    const y = this.scrollY;
-    const vis: Array<PageChunk> = [];
-    for (const ch of this.allChunks) {
-      const inWindow = ch.top < y + viewport + 300 && ch.top + ch.height > y - 300;
-      let cnt = 0;
-      for (const p of ch.pages) {
-        if (this.pageImages[p] !== null) {
-          cnt++;
-        }
-      }
-      // imgKey 只在「块内全部就绪」时翻转：避免逐页到位各重建一次、
-      // 牵连同块 PageInkCanvas 反复重挂打断邻页书写
-      vis.push({
-        top: ch.top,
-        height: ch.height,
-        pages: inWindow ? ch.pages : [],
-        imgKey: (inWindow && cnt === ch.pages.length && ch.pages.length > 0) ? 1 : 0
-      });
+    const ready: Array<boolean> = [];
+    for (let i = 0; i < this.pageImages.length; i++) {
+      ready.push(this.pageImages[i] !== null);
     }
-    this.visibleChunks = vis;
+    this.visibleChunks = visibleChunks(this.allChunks, this.scrollY, this.viewportHeight,
+      ready, CHUNK_WINDOW_MARGIN);
   }
 
   private refreshWindow(y: number): void {
@@ -461,10 +414,12 @@ export struct ReaderView {
       this.requestPage(i);
     }
     // LRU 回收：窗外页释放位图，内存有界
+    const loaded: Array<boolean> = [];
     for (let i = 0; i < this.pageImages.length; i++) {
-      if ((i < range.first - LRU_MARGIN || i > range.last + LRU_MARGIN) && this.pageImages[i] !== null) {
-        this.pageImages[i] = null;
-      }
+      loaded.push(this.pageImages[i] !== null);
+    }
+    for (const i of pagesToRelease(range, loaded, LRU_MARGIN)) {
+      this.pageImages[i] = null;
     }
     this.windowPages = indices;
     this.refreshChunks();
@@ -1116,20 +1071,8 @@ export struct ReaderView {
   }
 
   private indexButtonText(): string {
-    if (this.analysisStatus !== '') {
-      return this.analysisStatus;
-    }
-    const n = this.pageTops.length;
-    if (this.indexStatus !== '') {
-      return this.indexStatus;
-    }
-    if (this.indexReady && this.indexCap < n) {
-      return `索引 ${this.indexCap}/${n}`;
-    }
-    if (this.indexReady) {
-      return '已索引';
-    }
-    return '索引';
+    return indexButtonLabel(this.analysisStatus, this.indexStatus, this.indexReady,
+      this.indexCap, this.pageTops.length);
   }
 
   private clampAimPage(): number {
@@ -1155,15 +1098,12 @@ export struct ReaderView {
       return -1;
     }
     const rows = this.sampleGrids[b.pageIndex].rows;
-    const anchor = anchorScrollY(this.pageTops[b.pageIndex], this.slotHeights[b.pageIndex], rows, b.anchorY);
-    return projectToViewport(anchor, this.scrollY, this.viewportHeight > 0 ? this.viewportHeight : 600);
+    return bubbleScreenY(this.pageTops[b.pageIndex], this.slotHeights[b.pageIndex], rows,
+      b.anchorY, this.scrollY, this.viewportHeight);
   }
 
   private dotSize(b: QuestionBubble): number {
-    if (b.phase === BubblePhase.Thinking) {
-      return 16;
-    }
-    return b.phase === BubblePhase.Done ? 14 : 8;
+    return bubbleDotSize(b.phase);
   }
 
   // 气泡输入草稿（每个气泡独立，互不串扰）
@@ -1173,7 +1113,7 @@ export struct ReaderView {
   }
 
   private dotOpacity(b: QuestionBubble): number {
-    return b.phase === BubblePhase.Thinking ? 0.6 : 1;
+    return bubbleDotOpacity(b.phase);
   }
 
   build() {

@@ -53,6 +53,30 @@ export function projectToViewport(anchorScroll: number, scrollY: number, viewpor
   return y;
 }
 
+// 气泡在视口中的 y 坐标：页顶 + 页内锚点比例 → 长卷坐标 → 视口坐标。
+// 自 view/ReaderView 抽出以便单测（页越界的判断由调用方负责）。
+// viewportHeight <= 0 时按 600 兜底：布局完成前视口高度还是 0，
+// 若直接透传会让 y > 0 一律判为「滚出视野」，把所有气泡误钉成图钉。
+// 命名为 bubbleScreenY 而非 bubbleViewportY，避免与 ReaderView 的同名私有方法混淆。
+export function bubbleScreenY(pageTop: number, slotHeight: number, gridRows: number,
+  anchorY: number, scrollY: number, viewportHeight: number): number {
+  const anchor = anchorScrollY(pageTop, slotHeight, gridRows, anchorY);
+  const vp = viewportHeight > 0 ? viewportHeight : 600;
+  return projectToViewport(anchor, scrollY, vp);
+}
+
+// 气泡点尺寸随生命周期：思考中最大（液态流动），完成后凝驻，收敛后最小
+export function bubbleDotSize(phase: BubblePhase): number {
+  if (phase === BubblePhase.Thinking) {
+    return 16;
+  }
+  return phase === BubblePhase.Done ? 14 : 8;
+}
+
+export function bubbleDotOpacity(phase: BubblePhase): number {
+  return phase === BubblePhase.Thinking ? 0.6 : 1;
+}
+
 // 同屏至多 maxVisible 枚，旧的折叠为 +N（设计定稿：超出折叠为「+N」）
 export function foldBubbles(bubbles: Array<QuestionBubble>, maxVisible: number): FoldedBubbles {
   const extra = bubbles.length > maxVisible ? bubbles.length - maxVisible : 0;

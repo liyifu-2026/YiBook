@@ -15,7 +15,7 @@ entry/src/main/ets/
 ├── entrybackupability/  备份扩展
 │
 ├── view/                ← ArkUI 界面层（第 3 层）
-│   LibraryView / ReaderView / StudyRoomView
+│   LibraryView / ReaderView / StudyRoomView + 纯呈现计算 PresentationMath
 │
 ├── ink/                 ┐
 ├── ai/                  │
@@ -28,7 +28,7 @@ entry/src/main/ets/
     JsonFile / Sse / Theme / Ports / DocModel / Batching
 ```
 
-**共 8 个业务域 + 3 个固定入口目录，45 个模块。**
+**共 8 个业务域 + 3 个固定入口目录，47 个模块。**
 
 `pages/Index.ets` 必须留在 `pages/`：`entry/src/main/resources/base/profile/main_pages.json` 按 `"pages/Index"` 引用它，移动会导致应用起不来。
 
@@ -39,13 +39,13 @@ entry/src/main/ets/
 | 域 | 职责 | 模块 |
 |---|---|---|
 | **core** | 与业务无关的基础设施 + 跨域共享契约：文件读写、SSE 流解析、配色、**端口接口**、**共享纯数据类型** | `JsonFile` `Sse` `Theme` `Ports` `DocModel` `Batching` |
-| **pdf** | PDF 取页与长卷几何：渲染窗、连续布局、裁白边、屏幕↔页面坐标变换 | `PdfPageSource` `RenderWindow` `ContinuousLayout` `ReaderGeometry` `CropMath` `CropPipeline` `ScanPipeline` |
+| **pdf** | PDF 取页与长卷几何：渲染窗、连续布局、裁白边、屏幕↔页面坐标变换、**长卷分块与可见窗口** | `PdfPageSource` `RenderWindow` `ContinuousLayout` `ReaderGeometry` `CropMath` `CropPipeline` `ScanPipeline` `ChunkWindow` |
 | **book** | 书架、章节模型、索引构建与缓存、已读水位 | `BookshelfModel` `ChapterModel` `BookIndexer` `IndexerMath` `IndexCache` `OcrTexts` `ReadingProgress` |
 | **search** | 本地双路检索与融合：分块、词法、向量、RRF+MMR、路由 | `Chunker` `LexicalIndex` `VectorIndex` `RankFusion` `QueryRouter` `SearchOrchestrator` `KnowledgeBase` |
 | **ai** | BYOK 云端链路：LLM/向量/视觉客户端、提示词装配、回答解析、问答记录 | `LlmClient` `EmbeddingClient` `VisionClient` `PromptAssembler` `ContextSummary` `AnswerParser` `Qa` |
 | **ink** | 手写与圈选：笔画存储、序列化、手势判定、提问气泡 | `InkStore` `InkPersistence` `GestureMath` `Gestures` `BubbleModel` `PageInkCanvas` |
 | **review** | 间隔重复复习队列 | `Review` `ReviewQueue` |
-| **view** | ArkUI 界面层，唯一顶层 | `LibraryView` `ReaderView` `StudyRoomView` |
+| **view** | ArkUI 界面层，唯一顶层；外加视图自己的**纯呈现计算**（按钮文案、封面形变、书架列数等） | `LibraryView` `ReaderView` `StudyRoomView` `PresentationMath` |
 
 ---
 
@@ -54,7 +54,7 @@ entry/src/main/ets/
 以源码中实际的 `import` 统计（数字为引用处数）：
 
 ```
-view ──> ai(9) book(8) core(6) ink(6) pdf(9) review(2) search(5)
+view ──> ai(9) book(8) core(6) ink(6) pdf(10) review(2) search(5)
 book ──> core(3) search(4)
 ai   ──> core(5)
 ink  ──> pdf(4)
@@ -108,20 +108,23 @@ review ─> （无出边）
 | 域 | 纯逻辑 | 含系统 API(`@kit`) | 含 ArkUI | 小计 |
 |---|---:|---:|---:|---:|
 | core | 5 | 1 | 0 | 6 |
-| pdf | 6 | 1 | 0 | 7 |
+| pdf | 7 | 1 | 0 | 8 |
 | book | 6 | 1 | 0 | 7 |
 | search | **7** | 0 | 0 | 7 |
 | ai | 4 | 3 | 0 | 7 |
 | ink | 5 | 0 | 1 | 6 |
 | review | **2** | 0 | 0 | 2 |
-| view | 0 | 0 | 3 | 3 |
-| **合计** | **35** | **6** | **4** | **45** |
+| view | 1 | 0 | 3 | 4 |
+| **合计** | **37** | **6** | **4** | **47** |
 
 - `search/` 与 `review/` 是 **100% 纯逻辑**，任何改动都必须有单测覆盖。
+- `view/` 里的 `PresentationMath` 是**纯的**（列表见下），视图的呈现分支写在它里面而不是埋在组件里，才能被单测覆盖。
 - 6 个含系统 API 的模块：`core/JsonFile`、`pdf/PdfPageSource`、`book/IndexCache`、`ai/LlmClient`、`ai/EmbeddingClient`、`ai/VisionClient`。
 - 4 个 ArkUI 模块：`ink/PageInkCanvas`、`view/LibraryView`、`view/ReaderView`、`view/StudyRoomView`。
 
 新增算法模块时，**纯逻辑放对应业务域并配单测**；一旦需要 `@kit.*`，说明它在做 IO，应放进该域的客户端/适配模块，而不是让算法模块去 import。
+
+> **命名坑**：`view/PresentationMath` 里的函数名刻意与视图内的私有包装方法区分开（如 `indexButtonLabel` vs 私有方法 `indexButtonText`、`coverCellScale` vs `cellScale`）。若重名，`return cellWidthPct(...)` 这种「方法调用同名纯函数」的写法看起来像无限递归，极易误读——虽然 TS 里未限定名会走模块作用域、能正常编译。
 
 ---
 
@@ -166,7 +169,7 @@ node "F:\deveco\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p modu
 node "F:\deveco\DevEco Studio\tools\hvigor\bin\hvigorw.js" assembleHap
 ```
 
-当前基线：**34 个测试文件 / 119 用例全通过**；`assembleHap` 通过。
+当前基线：**36 个测试文件 / 131 本地用例全通过**；`assembleHap` 通过；另有 3 个真机插桩用例（`entry/src/ohosTest/`，需设备）。
 
 > `build-profile.json5` 的 `signingConfigs` 已挖空（原含签名口令与设备证书路径）。
 > 本地原值备份在 `.signing-config.backup.json5`（已 gitignore，不入库）。
@@ -195,8 +198,8 @@ node "F:\deveco\DevEco Studio\tools\hvigor\bin\hvigorw.js" assembleHap
 ## 9. 已知技术债
 
 1. ~~`ai ↔ book`、`book ↔ pdf` 域级交叉引用~~ **已消除**（2026-10-04，见 §3）。遗留两处**单向**类型级依赖：`ink → pdf`、`search → ai`，不构成环。
-2. **两个巨型视图**：`view/ReaderView.ets` 1823 行、`view/LibraryView.ets` 908 行，职责过载，是后续拆分重点。
+2. **巨型视图只拆了「逻辑」，没拆「结构」**：`view/ReaderView.ets` 1878 → 1771 行，`view/LibraryView.ets` 908 → 885 行。真正的问题在于 `ReaderView.build()` 仍有约 770 行、且整个文件**没有任何 `@Builder`**——所有 UI 内联在一个方法里。本次抽出的只是纯逻辑（`pdf/ChunkWindow`、`view/PresentationMath`、`ink/BubbleModel` 的新增函数，共 12 个新用例），因为那部分可测、零行为风险。**把 `build()` 拆成 `@Builder` 与独立子 `@Component` 仍是待办**，它需要跨组件传递约 40 个 `@State`（`@Link`/`@ObjectLink` 编排），属高风险改动，且界面文件归 UI agent 负责。
 3. **双 agent 协作边界**：UI 视觉由独立 agent 负责。分域重构已移动全部界面文件路径（`reading/` → `view/`、`ink/` 等），该 agent 手上的旧路径全部失效，需同步告知。
 4. ~~`LibraryView_new.ets` 草稿待定~~ **已删除**（2026-10-04）。它是截断的残缺草稿：82 个开括号对 71 个闭括号、**没有 `build()` 方法**、末尾停在表达式中间，根本无法编译；而现行的 `view/LibraryView.ets` 已远超它（953+ 行、5 个 `@Builder`、主题切换/封面轮换/缩略图/删除确认）。内容仍可从基线提交 `924d82a:LibraryView_new.ets` 取回。
 5. **`entry/src/main/resources/rawfile/sample_textbook.pdf` 实为扫描版**（无文字层、书签为逐页垃圾），文本锚定与章节提取的真验证仍需一份**带文字层 + 真书签**的原生 PDF。
-6. **`book/BookIndexer.ensureOcr` 尚无单测**：它的 `PageImageSource` 端口已就绪，但补测试仍需一个实现该端口的纯替身——目前只测了 `build` 路径（13 个用例）。
+6. **`book/BookIndexer` 已补单测**（13 个用例，`build` 8 个 + `ensureOcr` 5 个），但它依赖的 `pdf/PdfPageSource` 面向真实 PDF 的解析行为**只能上真机验**——见 `entry/src/ohosTest/ets/test/NativePdf.test.ets`（3 个用例，已实测通过）。

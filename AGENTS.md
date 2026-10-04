@@ -33,7 +33,7 @@
     4. 运行（**平板必须先解锁**，锁屏会报 `10106102`）：`hdc shell "aa test -b com.leaif.yibook -m entry_test -s unittest OpenHarmonyTestRunner -s timeout 180000"`
     5. **用完必须还原**：`git checkout HEAD -- build-profile.json5`（否则签名口令会被提交）
 - SDK：HarmonyOS 6.1.1(24)（build-profile  compatibleSdkVersion）
-- 测试框架：`@ohos/hypium`（本地单测在 `entry/src/test/`，入口 `List.test.ets` 的 `testsuite()` 注册；当前 34 个测试文件 / 119 用例）
+- 测试框架：`@ohos/hypium`（本地单测在 `entry/src/test/`，入口 `List.test.ets` 的 `testsuite()` 注册；当前 36 个测试文件 / 131 用例）
 - 真机部署：hdc 在 `F:\deveco\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe`；一键脚本 `bash device-run.sh`（构建→安装→启动→hilog，`log` 参数只看日志）；`bash devtap.sh "<文本>" [dy]` 按文本定位组件点按（真机冒烟）。前置：DevEco 里 File > Project Structure > Signing Configs 勾选 Automatically generate signature——真机 profile 绑定「包名+设备 UDID」，OpenHarmony 自签材料不适用于华为商用平板。包名 `com.leaif.yibook`，测试平板 TGR-W10。
 - 双 agent 协作边界：UI 视觉由独立 agent 负责（`entry/src/main/ets/view/` 下的 LibraryView/ReaderView/StudyRoomView、`ink/PageInkCanvas`、`pages/Index`）；功能/管线归本工程。**注：2026-10-04 已把源码从扁平的 `reading/` 拆为 8 个业务域，界面文件路径变为 `view/`（详见 `ARCHITECTURE.md`）**。改共享文件前先 `ls -lt entry/src/main/ets/**` 确认对方已静默 ≥2 分钟，部署前同样，避免把半成品打进包。
 - 书写交互铁律（用户定调，无可妥协）：**手指永远滚动、只有触控笔才书写**——PageInkCanvas 用 `touches[i].sourceTool === SourceTool.Pen` 过滤（SDK TouchObject.sourceTool 可用，此前误判不可用）；笔的颜色/粗细配置放阅读之外（配好再进来），橡皮擦放阅读之内——UI 侧约定。
