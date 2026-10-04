@@ -1,9 +1,9 @@
 import { InstantShapeGenerator, ShapeInfo } from '@kit.Penkit';
 import { strokeBBox, mapShapeToGesture, GestureKind, InkPoint } from './GestureMath';
-import { toPagePoint } from './ReaderGeometry';
+import { toPagePoint } from '../pdf/ReaderGeometry';
 import { InkStroke, InkStore } from './InkStore';
-import { DisplayTransform } from './ReaderGeometry';
-import { BBox } from './CropMath';
+import { DisplayTransform } from '../pdf/ReaderGeometry';
+import { BBox } from '../pdf/CropMath';
 
 // 单页墨迹层：叠在该页渲染图上的透明画布。
 // 普通笔 = 黑墨；AI 笔 = 液态彩半透明，抬笔交给系统一笔成形，

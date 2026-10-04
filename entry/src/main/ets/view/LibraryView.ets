@@ -2,14 +2,14 @@ import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { BookshelfModel, BookRecord } from './BookshelfModel';
-import { groupQaByChapter, QaGroup, QaRecord } from './Qa';
-import { textHash } from './IndexerMath';
-import { Palette, paletteOf } from './Theme';
-import { PdfPageSource } from './PdfPageSource';
-import { downsampleGrid } from './CropPipeline';
+import { BookshelfModel, BookRecord } from '../book/BookshelfModel';
+import { groupQaByChapter, QaGroup, QaRecord } from '../ai/Qa';
+import { textHash } from '../book/IndexerMath';
+import { Palette, paletteOf } from '../core/Theme';
+import { PdfPageSource } from '../pdf/PdfPageSource';
+import { downsampleGrid } from '../pdf/CropPipeline';
 import { image } from '@kit.ImageKit';
-import { readJsonFile, writeJsonFile } from './JsonFile';
+import { readJsonFile, writeJsonFile } from '../core/JsonFile';
 
 // 书房 · 夜城风（扁平矢量 + 波普 + Lo-fi 嘻哈专辑封面）：封面墙 = 深夜里一排排亮着暖光的窗。
 // 交互纪律：封面即按钮（点 = 翻开这本书的档案，继续阅读在里面）；长按 = 菜单（删除）；

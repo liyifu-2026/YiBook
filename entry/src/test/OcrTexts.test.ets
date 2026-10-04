@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { OcrTexts } from '../main/ets/reading/OcrTexts';
+import { OcrTexts } from '../main/ets/book/OcrTexts';
 
 export default function ocrTextsTest() {
   describe('ocrTexts', () => {

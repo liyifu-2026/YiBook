@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { parseAnswer } from '../main/ets/reading/AnswerParser';
+import { parseAnswer } from '../main/ets/ai/AnswerParser';
 
 export default function answerParserTest() {
   describe('answerParser', () => {

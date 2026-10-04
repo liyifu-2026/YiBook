@@ -1,0 +1,18 @@
+# 统一换行为 LF：本机 core.autocrlf=true，若不锁定会在每次 checkout 产生
+# "LF will be replaced by CRLF" 伪改动提示，污染 diff。
+* text=auto eol=lf
+
+# 二进制资源，禁止任何换行符转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.mp4  binary
+*.pdf  binary
+*.zip  binary
+
+# 签名材料（本就不入库，此处双保险）
+*.p12  binary
+*.cer  binary
+*.p7b  binary

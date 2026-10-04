@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { ReviewQueue } from '../main/ets/reading/ReviewQueue';
+import { ReviewQueue } from '../main/ets/review/ReviewQueue';
 
 const DAY = 86400000;
 

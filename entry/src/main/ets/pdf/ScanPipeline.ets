@@ -1,4 +1,4 @@
-import { OutlineMarker } from './ChapterModel';
+import { OutlineMarker } from '../book/ChapterModel';
 
 // 扫描书管线（决策 #15）T2：视觉 LLM 按约定格式读目录页后，
 // 由本解析器把目录文本转为章节标记（只认「第N章/部分/讲」级，小节忽略）。

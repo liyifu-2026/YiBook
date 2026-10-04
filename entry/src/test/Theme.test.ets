@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { NIGHT, DAY, paletteOf } from '../main/ets/reading/Theme';
+import { NIGHT, DAY, paletteOf } from '../main/ets/core/Theme';
 
 export default function themeTest() {
   describe('theme', () => {

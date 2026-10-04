@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { transformForCrop, toPagePoint, DisplayTransform } from '../main/ets/reading/ReaderGeometry';
-import { BBox } from '../main/ets/reading/CropMath';
+import { transformForCrop, toPagePoint, DisplayTransform } from '../main/ets/pdf/ReaderGeometry';
+import { BBox } from '../main/ets/pdf/CropMath';
 
 export default function readerGeometryTest() {
   describe('readerGeometry', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { assemblePrompt, PromptParts, SourceBlock } from '../main/ets/reading/PromptAssembler';
+import { assemblePrompt, PromptParts, SourceBlock } from '../main/ets/ai/PromptAssembler';
 
 function block(id: number, text: string): SourceBlock {
   const b: SourceBlock = { id: id, sourceLine: `P${id}`, text: text };

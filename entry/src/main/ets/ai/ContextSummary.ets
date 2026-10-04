@@ -1,4 +1,4 @@
-import { Chapter } from './ChapterModel';
+import { Chapter } from '../book/ChapterModel';
 
 // L1/L2 上下文补全（零 LLM 成本方案）：
 // L1 = 章节目录摘要（章节标题即全书骨架，来自 M3 自动分章）；

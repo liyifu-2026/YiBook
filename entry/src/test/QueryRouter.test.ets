@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { routeQuery, QueryRoute } from '../main/ets/reading/QueryRouter';
+import { routeQuery, QueryRoute } from '../main/ets/search/QueryRouter';
 
 export default function queryRouterTest() {
   describe('queryRouter', () => {

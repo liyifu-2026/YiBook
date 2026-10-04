@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { BookshelfModel } from '../main/ets/reading/BookshelfModel';
+import { BookshelfModel } from '../main/ets/book/BookshelfModel';
 
 export default function bookshelfModelTest() {
   describe('bookshelfModel', () => {

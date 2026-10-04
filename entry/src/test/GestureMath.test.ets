@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { strokeBBox, mapShapeToGesture, GestureKind, InkPoint } from '../main/ets/reading/GestureMath';
+import { strokeBBox, mapShapeToGesture, GestureKind, InkPoint } from '../main/ets/ink/GestureMath';
 
 function pts(coords: Array<number>): Array<InkPoint> {
   const out: Array<InkPoint> = [];

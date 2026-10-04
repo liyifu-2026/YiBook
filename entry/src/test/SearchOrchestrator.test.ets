@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { selectBlocks, filterRead, IndexedChunk } from '../main/ets/reading/SearchOrchestrator';
+import { selectBlocks, filterRead, IndexedChunk } from '../main/ets/search/SearchOrchestrator';
 
 function chunk(id: number, sourceLine: string, text: string, vec: Array<number>): IndexedChunk {
   const c: IndexedChunk = { id: id, sourceLine: sourceLine, text: text, vec: vec, pageIndex: id, charStart: 0, charEnd: 10 };

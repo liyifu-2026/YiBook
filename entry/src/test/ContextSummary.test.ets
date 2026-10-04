@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { bookOutlineSummary, chapterExcerpt } from '../main/ets/reading/ContextSummary';
-import { Chapter } from '../main/ets/reading/ChapterModel';
+import { bookOutlineSummary, chapterExcerpt } from '../main/ets/ai/ContextSummary';
+import { Chapter } from '../main/ets/book/ChapterModel';
 
 function ch(id: number, title: string, first: number, last: number): Chapter {
   const c: Chapter = { id: id, title: title, firstPage: first, lastPage: last, manual: false };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { textHash, batchTexts, cacheLookup, planMissing, assembleVectors } from '../main/ets/reading/IndexerMath';
+import { textHash, batchTexts, cacheLookup, planMissing, assembleVectors } from '../main/ets/book/IndexerMath';
 
 export default function indexerMathTest() {
   describe('indexerMath', () => {

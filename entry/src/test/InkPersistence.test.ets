@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { strokesToJson, strokesFromJson } from '../main/ets/reading/InkPersistence';
-import { InkStore, InkStroke } from '../main/ets/reading/InkStore';
-import { InkPoint } from '../main/ets/reading/GestureMath';
+import { strokesToJson, strokesFromJson } from '../main/ets/ink/InkPersistence';
+import { InkStore, InkStroke } from '../main/ets/ink/InkStore';
+import { InkPoint } from '../main/ets/ink/GestureMath';
 
 function stroke(pageIndex: number, xs: Array<number>, isAi: boolean, regularized: boolean,
   shapeString: string): InkStroke {

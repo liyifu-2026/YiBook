@@ -1,4 +1,4 @@
-import { BBox } from './CropMath';
+import { BBox } from '../pdf/CropMath';
 
 // 手势词表（设计定稿）：只有 AI 笔迹的「圈」和「框」触发提问，其余一律忽略。
 // shapeType 取自系统 Pen Kit InstantShapeGenerator 的 ShapeInfo：

@@ -1,5 +1,5 @@
 import { http } from '@kit.NetworkKit';
-import { batchTexts } from './IndexerMath';
+import { batchTexts } from '../book/IndexerMath';
 
 // BYOK embeddings：OpenAI 兼容 /embeddings（Qwen text-embedding-v3、
 // SiliconFlow bge-m3 等）。DeepSeek 无 embeddings 接口，留空即关闭向量路。

@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { pageOffsets, totalHeight, pageAt } from '../main/ets/reading/ContinuousLayout';
+import { pageOffsets, totalHeight, pageAt } from '../main/ets/pdf/ContinuousLayout';
 
 export default function continuousLayoutTest() {
   describe('continuousScroll', () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { KnowledgeBase, BookIndexEntry } from '../main/ets/reading/KnowledgeBase';
-import { LexicalIndex } from '../main/ets/reading/LexicalIndex';
-import { IndexedChunk } from '../main/ets/reading/SearchOrchestrator';
+import { KnowledgeBase, BookIndexEntry } from '../main/ets/search/KnowledgeBase';
+import { LexicalIndex } from '../main/ets/search/LexicalIndex';
+import { IndexedChunk } from '../main/ets/search/SearchOrchestrator';
 
 function entry(key: string, title: string, id0: number, text: string): BookIndexEntry {
   const lex = new LexicalIndex();

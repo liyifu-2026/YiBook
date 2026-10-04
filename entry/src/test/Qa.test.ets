@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { groupQaByChapter, QaRecord } from '../main/ets/reading/Qa';
+import { groupQaByChapter, QaRecord } from '../main/ets/ai/Qa';
 
 function rec(page: number, chapter: string): QaRecord {
   const r: QaRecord = {

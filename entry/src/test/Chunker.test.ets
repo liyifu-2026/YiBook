@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { chunkText } from '../main/ets/reading/Chunker';
+import { chunkText } from '../main/ets/search/Chunker';
 
 export default function chunkerTest() {
   describe('chunker', () => {

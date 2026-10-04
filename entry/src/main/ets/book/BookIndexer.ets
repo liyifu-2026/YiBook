@@ -1,14 +1,14 @@
-import { PdfPageSource } from './PdfPageSource';
-import { chunkText } from './Chunker';
+import { PdfPageSource } from '../pdf/PdfPageSource';
+import { chunkText } from '../search/Chunker';
 import { textHash, planMissing, assembleVectors } from './IndexerMath';
-import { EmbeddingClient } from './EmbeddingClient';
+import { EmbeddingClient } from '../ai/EmbeddingClient';
 import { IndexCache, CacheData } from './IndexCache';
 import { OcrTexts } from './OcrTexts';
-import { VisionClient } from './VisionClient';
-import { downsampleGrid, SampleGrid } from './CropPipeline';
-import { LexicalIndex } from './LexicalIndex';
-import { VectorIndex } from './VectorIndex';
-import { IndexedChunk } from './SearchOrchestrator';
+import { VisionClient } from '../ai/VisionClient';
+import { downsampleGrid, SampleGrid } from '../pdf/CropPipeline';
+import { LexicalIndex } from '../search/LexicalIndex';
+import { VectorIndex } from '../search/VectorIndex';
+import { IndexedChunk } from '../search/SearchOrchestrator';
 
 // 建书编排器（AGENTS.md 管线：文本提取→切分→哈希→缓存命中→增量 embedding→双索引）。
 // 纯 T0：只索引有文字层的页；扫描页留给 T1/T3。

@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { bubbleOnQuestion, markAnswerReady, markSettled, projectToViewport,
-  anchorScrollY, foldBubbles, bubblesFromQa, BubblePhase, QuestionBubble } from '../main/ets/reading/BubbleModel';
+  anchorScrollY, foldBubbles, bubblesFromQa, BubblePhase, QuestionBubble } from '../main/ets/ink/BubbleModel';
 
 interface QaLite {
   bookKey: string;

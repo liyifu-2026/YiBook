@@ -4,7 +4,7 @@ import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BBox } from './CropMath';
 import { SampleGrid, downsampleGrid, regionForBBox } from './CropPipeline';
-import { OutlineMarker } from './ChapterModel';
+import { OutlineMarker } from '../book/ChapterModel';
 
 export interface PageSize {
   width: number;

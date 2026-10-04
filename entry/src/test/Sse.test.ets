@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { extractSseEvents, Utf8Feeder } from '../main/ets/reading/Sse';
+import { extractSseEvents, Utf8Feeder } from '../main/ets/core/Sse';
 
 export default function sseTest() {
   describe('sse', () => {

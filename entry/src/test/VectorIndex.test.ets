@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { VectorIndex } from '../main/ets/reading/VectorIndex';
+import { VectorIndex } from '../main/ets/search/VectorIndex';
 
 export default function vectorIndexTest() {
   describe('vectorIndex', () => {

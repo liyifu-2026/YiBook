@@ -1,7 +1,7 @@
 import { http } from '@kit.NetworkKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { preferences } from '@kit.ArkData';
-import { Utf8Feeder, extractSseEvents } from './Sse';
+import { Utf8Feeder, extractSseEvents } from '../core/Sse';
 import { common } from '@kit.AbilityKit';
 
 // BYOK：OpenAI 兼容接口（DeepSeek/Qwen/GLM 通用），chat 为一次性、chatStream 为 SSE 流式；

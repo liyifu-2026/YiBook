@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { findInkBBox, clusterByParity, BBox } from '../main/ets/reading/CropMath';
+import { findInkBBox, clusterByParity, BBox } from '../main/ets/pdf/CropMath';
 
 function assertBBox(actual: BBox | null, l: number, t: number, r: number, b: number) {
   expect(actual !== null).assertTrue();

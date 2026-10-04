@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { updateHighWater } from '../main/ets/reading/ReadingProgress';
+import { updateHighWater } from '../main/ets/book/ReadingProgress';
 
 export default function readingProgressTest() {
   describe('readingProgress', () => {

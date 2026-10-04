@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { renderWindow } from '../main/ets/reading/RenderWindow';
+import { renderWindow } from '../main/ets/pdf/RenderWindow';
 
 export default function renderWindowTest() {
   describe('renderWindow', () => {

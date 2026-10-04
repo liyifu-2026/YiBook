@@ -1,5 +1,5 @@
 import { rrfFuse, mmrSelect } from './RankFusion';
-import { SourceBlock } from './PromptAssembler';
+import { SourceBlock } from '../ai/PromptAssembler';
 
 // 检索编排（问答管线设计·机制4-8）：双路排名 → RRF 融合 → MMR 去冗余
 // → 组装 L4 引用块（id 为 1 起始的引用编号）。

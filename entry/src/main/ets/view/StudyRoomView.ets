@@ -1,8 +1,8 @@
 import { common } from '@kit.AbilityKit';
-import { ReviewQueue, QuizCard } from './ReviewQueue';
-import { QaRecord } from './Qa';
-import { Palette, paletteOf } from './Theme';
-import { readJsonFile, writeJsonFile } from './JsonFile';
+import { ReviewQueue, QuizCard } from '../review/ReviewQueue';
+import { QaRecord } from '../ai/Qa';
+import { Palette, paletteOf } from '../core/Theme';
+import { readJsonFile, writeJsonFile } from '../core/JsonFile';
 
 // 书房管家（纯被动，决策 #3）：只住在书房，绝不进入阅读界面。
 // 今日一页 = 到期测验卡（SM-2 排期），翻卡自评，材料全部来自你自己的圈选提问。

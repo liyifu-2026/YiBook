@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { tokenize, LexicalIndex } from '../main/ets/reading/LexicalIndex';
+import { tokenize, LexicalIndex } from '../main/ets/search/LexicalIndex';
 
 export default function lexicalIndexTest() {
   describe('lexicalIndex', () => {

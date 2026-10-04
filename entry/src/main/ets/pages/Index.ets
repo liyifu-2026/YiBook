@@ -1,6 +1,6 @@
-import { LibraryView } from '../reading/LibraryView';
-import { StudyRoomView } from '../reading/StudyRoomView';
-import { ReaderView } from '../reading/ReaderView';
+import { LibraryView } from '../view/LibraryView';
+import { StudyRoomView } from '../view/StudyRoomView';
+import { ReaderView } from '../view/ReaderView';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { common } from '@kit.AbilityKit';

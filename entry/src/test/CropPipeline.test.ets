@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { downsampleGrid, parityCropFor, sampleToPagePoint, regionForBBox, regionHint, SampleGrid } from '../main/ets/reading/CropPipeline';
-import { BBox, ParityCrop } from '../main/ets/reading/CropMath';
+import { downsampleGrid, parityCropFor, sampleToPagePoint, regionForBBox, regionHint, SampleGrid } from '../main/ets/pdf/CropPipeline';
+import { BBox, ParityCrop } from '../main/ets/pdf/CropMath';
 
 export default function cropPipelineTest() {
   describe('cropPipeline', () => {

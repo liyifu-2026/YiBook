@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { isLeftSwipe, extendCap } from '../main/ets/reading/Gestures';
+import { isLeftSwipe, extendCap } from '../main/ets/ink/Gestures';
 
 export default function gesturesTest() {
   describe('gestures', () => {

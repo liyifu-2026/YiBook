@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { buildVisionMessages } from '../main/ets/reading/VisionClient';
+import { buildVisionMessages } from '../main/ets/ai/VisionClient';
 
 export default function visionClientTest() {
   describe('visionClient', () => {

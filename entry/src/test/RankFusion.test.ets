@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { rrfFuse, mmrSelect } from '../main/ets/reading/RankFusion';
+import { rrfFuse, mmrSelect } from '../main/ets/search/RankFusion';
 
 export default function rankFusionTest() {
   describe('rankFusion', () => {

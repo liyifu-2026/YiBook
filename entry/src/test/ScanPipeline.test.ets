@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { markersFromTocText } from '../main/ets/reading/ScanPipeline';
+import { markersFromTocText } from '../main/ets/pdf/ScanPipeline';
 
 export default function scanPipelineTest() {
   describe('scanPipeline', () => {
