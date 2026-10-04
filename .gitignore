@@ -1,0 +1,22 @@
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+
+# ---- YiBook 追加 ----
+# 大体积本地产物 / 第三方素材，不入版本控制
+/.ux/
+/Notes1.0.5.zip
+/Notes_extracted/
+/.device-shots/
+
+# 签名材料备份（含明文口令，绝不入库）
+/.signing-config.backup.json5

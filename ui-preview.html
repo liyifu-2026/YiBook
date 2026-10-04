@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>亦书 · 前端实况（按当前代码 1:1）</title>
+<style>
+  :root{
+    --bg:#0a0a0a; --ink:#161616; --paper:#ffffff; --card:#1e1e1e; --card2:#1b1b1b;
+    --row:#262626; --btn:#3a3a3a; --txt:#eeeeee; --sub:#999999; --dim:#888888;
+    --faint:#666666; --hairline:#333333; --liq:#0a84ff;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:var(--bg); color:#ccc; font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif; padding:32px 24px 64px;}
+  h1{color:var(--txt); font-size:22px; font-weight:700;}
+  h1 small{color:var(--sub); font-size:12px; font-weight:400; margin-left:12px;}
+  .lead{color:var(--sub); font-size:13px; margin:10px 0 6px; max-width:960px; line-height:1.7;}
+  .legend{display:flex; gap:18px; flex-wrap:wrap; margin:14px 0 30px; color:var(--sub); font-size:12px;}
+  .legend span{display:inline-flex; align-items:center; gap:6px;}
+  .dot{width:10px; height:10px; border-radius:50%; display:inline-block;}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(880px, 1fr)); gap:44px 40px; justify-content:center; justify-items:start;}
+  @media (min-width: 1850px){ .grid{justify-items:center;} }
+  .frame .cap{color:var(--txt); font-size:15px; font-weight:700; margin-bottom:4px;}
+  .frame .cap em{color:var(--liq); font-style:normal; font-size:12px; margin-left:8px;}
+  .tablet{width:880px; height:560px; background:#111; border:1px solid #3a3a3a; border-radius:16px;
+    position:relative; overflow:hidden; margin-top:8px; box-shadow:0 8px 40px rgba(0,0,0,.6);}
+  .notes{margin-top:10px; color:var(--faint); font-size:12px; line-height:1.9; list-style:none;}
+  .notes li::before{content:"· "; color:var(--liq);}
+
+  /* ---- 通用控件（与 ArkTS 实现同款配色） ---- */
+  .btn{display:inline-flex; align-items:center; justify-content:center; background:var(--btn);
+    color:var(--txt); border:none; border-radius:16px; font-size:13px; height:30px; padding:0 10px; cursor:default;}
+  .btn.small{font-size:11px; height:22px; padding:0 6px; border-radius:11px;}
+  .btn.vio{background:var(--liq);}
+  .btn.inkbtn{background:var(--ink);}
+  .toolbar{position:absolute; top:0; left:0; right:0; height:36px; display:flex; align-items:center;
+    padding:0 12px; gap:4px; background:rgba(17,17,17,.92); z-index:30; border-bottom:1px solid var(--hairline);}
+  .toolbar .dimtxt{color:var(--dim); font-size:12px; white-space:nowrap;}
+  .toolbar .qcount{color:var(--liq); font-size:12px; margin-left:6px;}
+  .toolbar .sp{flex:1;}
+
+  /* ---- 书房 ---- */
+  .lib-head{display:flex; align-items:center; padding:12px 16px 8px; gap:8px;}
+  .lib-head .title{color:var(--txt); font-size:24px; font-weight:700; flex:1;}
+  .book-card{display:flex; align-items:center; background:var(--card); border-radius:10px; padding:12px; margin:8px 12px;}
+  .book-card .meta{flex:1;}
+  .book-card .t{color:var(--txt); font-size:15px;}
+  .book-card .s{color:var(--dim); font-size:11px; margin-top:3px;}
+
+  /* ---- 页面（扫描页示意） ---- */
+  .page{position:absolute; background:var(--paper); border-radius:2px; overflow:hidden;}
+  .page .tl{height:5px; background:#d8d8d8; border-radius:2px; margin:0 12%; margin-top:9px;}
+  .page .tl:nth-child(2n){margin-right:30%;}
+  .page .fig{margin:10px 16%; height:26px; background:#eaeaea; border-radius:3px;}
+  .seam{position:absolute; left:0; right:0; border-top:1px dashed rgba(10,132,255,.55); z-index:5;}
+  .seam i{position:absolute; right:8px; top:-16px; color:var(--liq); font-size:10px; font-style:normal; opacity:.8;}
+  .highlight-band{position:absolute; background:rgba(10,132,255,.13); border:1px solid rgba(10,132,255,.35); border-radius:6px; z-index:6;}
+
+  /* ---- 墨迹（SVG） ---- */
+  svg.ink{position:absolute; inset:0; width:100%; height:100%; z-index:8; pointer-events:none;}
+
+  /* ---- 气泡 ---- */
+  .bubble{position:absolute; border-radius:50%; background:var(--liq); z-index:20; cursor:pointer;}
+  .bubble.think{width:16px; height:16px; opacity:.6; animation:breathe 2.5s ease-in-out infinite alternate;}
+  .bubble.done{width:14px; height:14px;}
+  .bubble.settle{width:8px; height:8px;}
+  .bubble.pin{width:6px; height:6px; opacity:.7;}
+  @keyframes breathe{from{transform:scale(1);} to{transform:scale(1.25);}}
+  .plusn{position:absolute; left:2px; top:52px; color:var(--liq); font-size:11px; z-index:20;}
+
+  /* ---- 问答卡 ---- */
+  .qa-card{position:absolute; width:300px; background:var(--card); border-radius:10px; padding:12px; z-index:40;
+    text-align:left; border:1px solid #2c2c2c;}
+  .qa-card .head{color:var(--liq); font-size:13px;}
+  .qa-card .notice{color:var(--liq); font-size:11px; margin-top:4px;}
+  .qa-card .ans{color:var(--txt); font-size:13px; margin-top:6px; line-height:1.65;}
+  .qa-card .ans .ref{color:var(--liq); font-size:11px;}
+  .qa-card .src{color:var(--dim); font-size:11px; margin-top:6px;}
+  .qa-card .src b{color:var(--liq); font-weight:400; cursor:pointer;}
+  .qa-card .rel{color:var(--dim); font-size:11px; margin-top:4px;}
+  .qa-card .rel b{color:var(--liq); opacity:.75; font-weight:400; cursor:pointer;}
+  .qa-card .inrow{display:flex; gap:6px; margin-top:8px;}
+  .qa-card input{flex:1; background:#161616; border:1px solid #333; border-radius:6px; color:var(--txt);
+    font-size:12px; height:32px; padding:0 8px; outline:none;}
+  .qa-card .cfg{color:var(--sub); font-size:12px; margin-top:6px;}
+  .qa-card .lbl{color:var(--faint); font-size:11px; margin-top:8px;}
+  .qa-card .toggle{display:flex; align-items:center; margin-top:6px; color:var(--sub); font-size:11px;}
+  .qa-card .toggle .sw{margin-left:auto; width:30px; height:16px; border-radius:8px; background:var(--liq); position:relative;}
+  .qa-card .toggle .sw::after{content:""; position:absolute; right:2px; top:2px; width:12px; height:12px; border-radius:50%; background:#fff;}
+
+  /* ---- 草稿 ---- */
+  .draft{position:absolute; inset:0; background:#181818; z-index:50; display:flex; flex-direction:column;}
+  .draft .bar{height:34px; display:flex; align-items:center; gap:8px; padding:0 10px;}
+  .draft .bar .t{color:var(--txt); font-size:13px;}
+  .draft .canvas{flex:1; margin:0; position:relative;}
+  .draft .hint{position:absolute; color:var(--faint); font-size:11px;}
+
+  /* ---- 分章面板 ---- */
+  .chap-panel{position:absolute; width:86%; height:62%; left:7%; top:14%; background:var(--card2);
+    border-radius:12px; padding:12px; z-index:60; display:flex; flex-direction:column; gap:8px;}
+  .chap-panel .h{display:flex; align-items:center;}
+  .chap-panel .h .t{color:var(--txt); font-size:15px; font-weight:700; flex:1;}
+  .chap-panel .h .nudge{color:var(--sub); font-size:11px; margin-top:2px;}
+  .chap-row{display:flex; align-items:center; gap:4px; background:var(--row); border-radius:6px; padding:6px; }
+  .chap-row .t{color:#ddd; font-size:12px; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .chap-row .btn{font-size:11px; height:24px; border-radius:12px;}
+
+  /* ---- 管家 ---- */
+  .study-head{display:flex; align-items:center; padding:10px 12px; gap:8px; border-bottom:1px solid var(--hairline);}
+  .study-head .t{color:var(--txt); font-size:16px; font-weight:700; margin-left:auto; margin-right:auto;}
+  .study-head .st{color:var(--dim); font-size:12px;}
+  .quiz{width:82%; margin:16px auto 0; background:var(--card); border-radius:12px; padding:16px;}
+  .quiz .due{color:var(--liq); font-size:12px;}
+  .quiz .from{color:var(--dim); font-size:11px; margin-top:6px;}
+  .quiz .q{color:var(--txt); font-size:16px; margin-top:14px;}
+  .quiz .a{color:#bbb; font-size:13px; margin-top:12px; line-height:1.6;}
+  .quiz .grades{display:flex; gap:8px; margin-top:16px;}
+  .archive-h{color:var(--dim); font-size:12px; padding:8px 16px 4px;}
+  .qa-row{background:var(--card2); border-radius:8px; padding:10px; margin:0 12px 6px;}
+  .qa-row .m{color:var(--liq); font-size:11px;}
+  .qa-row .q{color:#ddd; font-size:12px; margin-top:3px;}
+
+  /* ---- 左缘手势条 ---- */
+  .edge{position:absolute; left:0; top:0; bottom:0; width:24px; z-index:25;
+    background:linear-gradient(90deg, rgba(10,132,255,.10), transparent);}
+  .edge::after{content:"左滑掀纸 →"; position:absolute; left:4px; top:46%; writing-mode:vertical-rl;
+    color:rgba(10,132,255,.5); font-size:10px;}
+
+  .tag{position:absolute; z-index:45; color:var(--liq); font-size:11px; background:rgba(17,17,17,.85);
+    border:1px solid rgba(10,132,255,.4); padding:2px 8px; border-radius:8px;}
+</style>
+</head>
+<body>
+<h1>亦书 · 前端实况 <small>按 entry/src/main/ets 当前代码 1:1 绘制 · 2026-09-28</small></h1>
+<p class="lead" style="color:#FF8A2A">⚠ 本稿已过期（2026-10-04）：视觉已全面转向「夜城风」（扁平矢量+波普+Lo-fi，深藏蓝/亮橙/纯黑，见决策 #37），水墨素材已删除。本页仅留作交互结构参考，真机效果以设备截图为准。</p>
+<p class="lead">横屏平板 · 黑白墨色打底 · 液态彩色专属 AI。六屏覆盖全部已实现界面：书房 → 长卷阅读（墨迹/气泡/工具栏）→ 问答卡 → 草稿 → 分章夹子 → 管家。
+动画按代码参数还原（思考呼吸 2.5s ±8%、完成凝驻、2s 收敛）。</p>
+<div class="legend">
+  <span><i class="dot" style="background:#fff"></i>纸面</span>
+  <span><i class="dot" style="background:#161616;border:1px solid #444"></i>普通墨迹</span>
+  <span><i class="dot" style="background:var(--liq)"></i>液态彩 = AI 专属</span>
+  <span><i class="dot" style="background:var(--liq);opacity:.5"></i>思考中（呼吸）</span>
+  <span><i class="dot" style="background:var(--liq);width:7px;height:7px"></i>收敛小点 / 图钉</span>
+  <span>工具栏从左至右：章名·页码 −/+ 已读|全书 问N 索引 草 章 撤 墨 问</span>
+</div>
+
+<div class="grid">
+
+  <!-- ① 书房 -->
+  <section class="frame">
+    <div class="cap">⓪ 书房 · 书柜封面墙 <em>LibraryView.ShelfMode（二阶段新增）</em></div>
+    <div class="tablet">
+      <div class="lib-head">
+        <div class="title">书房</div>
+        <button class="btn">管家</button>
+        <button class="btn vio">导入 PDF</button>
+      </div>
+      <div style="display:flex; gap:26px; padding:10px 20px 0;">
+        <div style="text-align:center;">
+          <div style="width:96px; height:136px; background:#2e2e2e; border-radius:4px 8px 8px 4px; border-left:3px solid #111; box-shadow:0 3px 6px rgba(0,0,0,.5); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 8px;"><div style="color:#f2f2f2; font-size:13px; text-align:center;">深入浅出程序设计竞赛</div><div style="width:40px; border-top:2px solid rgba(255,255,255,.65); margin:8px 0;"></div><div style="color:rgba(255,255,255,.55); font-size:9px;">亦书</div></div>
+          <button class="btn" style="margin-top:8px; font-size:12px;">读</button>
+        </div>
+        <div style="text-align:center;">
+          <div style="width:96px; height:136px; background:#383838; border-radius:4px 8px 8px 4px; border-left:3px solid #111; box-shadow:0 3px 6px rgba(0,0,0,.5); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 8px;"><div style="color:#f2f2f2; font-size:13px; text-align:center;">信号与系统</div><div style="width:40px; border-top:2px solid rgba(255,255,255,.65); margin:8px 0;"></div><div style="color:rgba(255,255,255,.55); font-size:9px;">亦书</div></div>
+          <button class="btn" style="margin-top:8px; font-size:12px;">读</button>
+        </div>
+        <div style="text-align:center;">
+          <div style="width:96px; height:136px; background:#424242; border-radius:4px 8px 8px 4px; border-left:3px solid #111; box-shadow:0 3px 6px rgba(0,0,0,.5); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 8px;"><div style="color:#f2f2f2; font-size:13px; text-align:center;">概率论与数理统计</div><div style="width:40px; border-top:2px solid rgba(255,255,255,.65); margin:8px 0;"></div><div style="color:rgba(255,255,255,.55); font-size:9px;">亦书</div></div>
+          <button class="btn" style="margin-top:8px; font-size:12px;">读</button>
+        </div>
+      </div>
+      <div style="height:2px; background:#333; margin:6px 20px 0;"></div>
+    </div>
+    <ul class="notes"><li>一本一本竖放的封面墙；点封面 → 进入「书列+详情」</li></ul>
+  </section>
+
+  <section class="frame">
+    <div class="cap">⓪b 书房 · 书列 + 本书内容 <em>LibraryView.DetailMode（二阶段新增）</em></div>
+    <div class="tablet" style="display:flex;">
+      <div style="width:110px; background:#0d0d0d; padding-top:10px; display:flex; flex-direction:column; align-items:center; gap:10px;">
+        <div style="text-align:center;">
+          <div style="width:74px; height:106px; background:#2e2e2e; border-radius:4px 8px 8px 4px; border-left:3px solid #111; display:flex; align-items:center; justify-content:center; padding:0 6px; color:#f2f2f2; font-size:11px; text-align:center;">深入浅出程序设计竞赛</div>
+          <div style="color:var(--liq); font-size:9px; margin-top:3px;">当前</div>
+        </div>
+        <div style="width:74px; height:106px; background:#383838; border-radius:4px 8px 8px 4px; border-left:3px solid #111; display:flex; align-items:center; justify-content:center; padding:0 6px; color:#f2f2f2; font-size:11px; text-align:center;">信号与系统</div>
+      </div>
+      <div style="flex:1; border-left:1px solid #2a2a2a; padding:14px;">
+        <div style="color:#eee; font-size:16px; font-weight:700;">深入浅出程序设计竞赛（书样）</div>
+        <div style="color:#888; font-size:11px; margin-top:4px;">问答 8 条 · 已读 P37 · 有草稿</div>
+        <div style="margin-top:10px; display:flex; gap:8px;">
+          <button class="btn vio" style="height:32px;">继续阅读 P37</button>
+          <button class="btn" style="height:32px;">删除</button>
+        </div>
+        <div style="color:#888; font-size:12px; margin:14px 0 4px;">草稿</div>
+        <div style="background:#1e1e1e; border-radius:6px; padding:8px; display:flex; color:#ddd; font-size:12px;">范围 P3-P5 · 12 笔<button class="btn" style="margin-left:auto; font-size:11px; height:24px;">打开</button></div>
+        <div style="color:#888; font-size:12px; margin:14px 0 4px;">笔记与对话（按章）</div>
+        <div style="color:var(--liq); font-size:11px; margin:6px 0 2px;">卷二 · 3 条</div>
+        <div style="background:#191919; border-radius:6px; padding:8px; display:flex; color:#ddd; font-size:12px;">用中文解释这一页的核心概念……<span style="margin-left:auto; color:var(--dim); font-size:10px;">P14</span><span style="margin-left:8px; color:var(--liq); font-size:11px;">回跳 →</span></div>
+      </div>
+    </div>
+    <ul class="notes">
+      <li>点书 → 封面跑到左列置顶；右侧按章归档问答、草稿范围，条条可回跳（initialPage 直达原文页）</li>
+      <li>「继续阅读」按高水位线续读；数据全部来自本机持久化（决策 #32）</li>
+    </ul>
+  </section>
+
+  <section class="frame">
+    <div class="cap">① 书房 · 书单（收起态） <em>LibraryView</em></div>
+    <div class="tablet">
+      <div class="lib-head">
+        <div class="title">书房</div>
+        <button class="btn">管家</button>
+        <button class="btn vio">导入 PDF</button>
+      </div>
+      <div class="book-card">
+        <div class="meta"><div class="t">深入浅出程序设计竞赛（书样）</div><div class="s">上次读到</div></div>
+        <button class="btn">读</button>
+      </div>
+      <div class="book-card">
+        <div class="meta"><div class="t">信号与系统（扫描版）</div><div class="s">未打开</div></div>
+        <button class="btn">读</button>
+      </div>
+      <div class="book-card">
+        <div class="meta"><div class="t">概率论与数理统计</div><div class="s">未打开</div></div>
+        <button class="btn">读</button>
+      </div>
+    </div>
+    <ul class="notes">
+      <li>任意设备 PDF 经文件选择器导入，复制进沙箱；书单 library.json 原子写</li>
+      <li>按最近打开排序（从未打开的排后）；首启自动种入书样</li>
+    </ul>
+  </section>
+
+  <!-- ② 长卷阅读 -->
+  <section class="frame">
+    <div class="cap">② 阅读器 · 长卷阅读 <em>ReaderView</em></div>
+    <div class="tablet">
+      <div class="toolbar">
+        <span class="dimtxt">第一章 · P3</span>
+        <button class="btn small">−</button><button class="btn small">+</button>
+        <button class="btn small">已读</button>
+        <span class="qcount">问 3</span>
+        <span class="sp"></span>
+        <button class="btn small vio">索引 60/327</button>
+        <button class="btn">草</button><button class="btn">章</button><button class="btn">撤</button>
+        <button class="btn inkbtn">墨</button><button class="btn">问</button>
+      </div>
+      <!-- 裁边后长卷两页 -->
+      <div class="page" style="left:24px; right:24px; top:36px; height:250px;">
+        <div class="tl"></div><div class="tl"></div><div class="tl"></div><div class="fig"></div>
+        <div class="tl"></div><div class="tl"></div><div class="tl"></div><div class="tl"></div>
+        <div class="tl"></div><div class="fig"></div><div class="tl"></div>
+      </div>
+      <div class="page" style="left:24px; right:24px; top:274px; height:250px;">
+        <div class="tl"></div><div class="tl"></div><div class="fig"></div><div class="tl"></div>
+        <div class="tl"></div><div class="tl"></div><div class="tl"></div><div class="fig"></div>
+        <div class="tl"></div>
+      </div>
+      <div class="seam" style="top:280px;"><i>页缝重叠 12vp · 末行不切</i></div>
+      <!-- 手写墨迹：黑墨 + AI圈选 + 一笔成形 -->
+      <svg class="ink" viewBox="0 0 880 560">
+        <path d="M120,120 C150,110 200,128 240,118 S300,124 330,116" fill="none" stroke="#161616" stroke-width="2.5" opacity=".92"/>
+        <path d="M95,150 C96,141 104,133 116,132 C133,131 146,142 145,156 C144,171 128,180 113,177 C100,174 93,163 95,150"
+              fill="none" stroke="#0a84ff" stroke-width="3" opacity=".55"/>
+        <ellipse cx="120" cy="154" rx="27" ry="23" fill="none" stroke="#0a84ff" stroke-width="2.5" opacity=".9"/>
+      </svg>
+      <div class="tag" style="left:180px; top:96px;">普通墨迹（黑）</div>
+      <div class="tag" style="left:60px; top:210px;">AI 笔歪圈 → 一笔成形规整轮廓</div>
+      <!-- 引用跳转高亮带 -->
+      <div class="highlight-band" style="left:28px; right:28px; top:330px; height:64px;"></div>
+      <div class="tag" style="right:40px; top:316px;">点击来源 P4 → 跳页高亮 2s</div>
+      <!-- 左缘气泡：收敛/思考/图钉/+N -->
+      <span class="bubble settle" style="left:8px; top:120px;"></span>
+      <span class="bubble settle" style="left:16px; top:170px;"></span>
+      <span class="bubble think"  style="left:6px; top:300px;"></span>
+      <span class="bubble done"   style="left:7px; top:360px;"></span>
+      <span class="bubble pin"    style="left:9px; top:60px;"></span>
+      <span class="bubble pin"    style="left:9px; top:76px;"></span>
+      <span class="plusn">+2</span>
+      <div class="edge"></div>
+    </div>
+    <ul class="notes">
+      <li>工具栏全部按钮已实现：章名·页码（随高水位联动）/ −+ 手调已读 / 已读|全书（铁律2）/ 问计数 / 索引（渐进续跑）/ 草 / 章 / 撤 / 墨 / 问</li>
+      <li>气泡四态：思考（呼吸 2.5s ±8%）→ 完成（凝驻）→ 收敛小点；滚出视野成图钉，点击跳回；同屏 5 枚 +N</li>
+      <li>索引按钮状态机：索引 → OCR x/y → 建索引… → 索引 60/327 → 已索引（续跑 +60）</li>
+      <li>左缘竖条 = 左滑掀纸入口（独立命中区，不抢画笔）</li>
+    </ul>
+  </section>
+
+  <!-- ③ 问答卡 -->
+  <section class="frame">
+    <div class="cap">③ 阅读器 · 问答卡（流式完成态） <em>askBubble → chatStream</em></div>
+    <div class="tablet">
+      <div class="toolbar">
+        <span class="dimtxt">第一章 · P5</span>
+        <button class="btn small">−</button><button class="btn small">+</button>
+        <button class="btn small">全书</button>
+        <span class="qcount">问 3</span>
+        <span class="sp"></span>
+        <button class="btn small">已索引</button>
+        <button class="btn">草</button><button class="btn">章</button><button class="btn">撤</button>
+        <button class="btn inkbtn">墨</button><button class="btn">问</button>
+      </div>
+      <div class="page" style="left:24px; right:24px; top:36px; height:240px; opacity:.35;">
+        <div class="tl"></div><div class="tl"></div><div class="tl"></div><div class="fig"></div><div class="tl"></div>
+      </div>
+      <span class="bubble settle" style="left:8px; top:96px;"></span>
+      <span class="bubble done"   style="left:7px; top:190px;"></span>
+      <!-- 问答卡 -->
+      <div class="qa-card" style="left:28px; top:120px;">
+        <div class="head">P5 · 圈选提问</div>
+        <div class="notice">已引用其他书的内容，可在设置关闭</div>
+        <div class="ans">傅里叶变换把时域信号分解为不同频率的正弦成分<span class="ref">[^2]</span>，是连接信号与系统两章的核心桥梁<span class="ref">[^1]</span>。</div>
+        <div class="src">来源：<b>P5</b> <b>P37</b></div>
+        <div class="rel">相关位置：<b>P41</b> <b>P52</b>（点击跳页高亮）</div>
+        <div class="inrow">
+          <input placeholder="输入你的问题…" value="那逆变换呢？">
+          <button class="btn vio">问</button>
+        </div>
+        <div class="lbl">修改 BYOK 配置 →</div>
+      </div>
+      <div class="tag" style="left:340px; top:96px;">追问自动走 FollowUp 路由（免检索）</div>
+      <div class="tag" style="left:340px; top:430px;">引用编号越界会被静默剔除（防幻觉）</div>
+    </div>
+    <ul class="notes">
+      <li>点历史气泡（凝驻点）直显当时的问答存档，零费用；点新气泡才发起提问</li>
+      <li>流式输出：答案边生成边显示；[DONE] 后做引用校验 + 沉淀测验卡</li>
+      <li>跨书引用首次出现时提示一次（可在设置卡 Toggle 关闭，已持久化）</li>
+      <li>未配 key 时：离线纯检索模式——只列相关位置与摘录</li>
+    </ul>
+  </section>
+
+  <!-- ④ 草稿 -->
+  <section class="frame">
+    <div class="cap">④ 草稿模式（范围锚定） <em>draftOpen + draftStore</em></div>
+    <div class="tablet">
+      <div class="draft">
+        <div class="bar">
+          <span class="t">草稿 · 范围P3-P5</span>
+          <span class="sp" style="flex:1"></span>
+          <button class="btn small">+1页</button>
+          <button class="btn small vio">完成</button>
+        </div>
+        <div class="canvas" style="background:#f7f5f0;">
+          <svg class="ink" viewBox="0 0 880 520">
+            <path d="M60,90 C140,70 260,110 380,88 S620,96 760,80" fill="none" stroke="#161616" stroke-width="2.5" opacity=".9"/>
+            <path d="M100,200 C180,180 300,220 420,196" fill="none" stroke="#161616" stroke-width="2.5" opacity=".9"/>
+            <ellipse cx="620" cy="300" rx="60" ry="38" fill="none" stroke="#0a84ff" stroke-width="3" opacity=".55"/>
+            <path d="M560,300 C575,262 668,258 682,302 C694,340 600,344 566,318" fill="none" stroke="#161616" stroke-width="2.5" opacity=".9"/>
+          </svg>
+          <div class="hint" style="left:24px; top:24px;">无限画布 v1（单张长画布）· 范围锚定：读在本范围内书签常驻</div>
+          <div class="hint" style="left:24px; top:44px; color:#0a84ff;">黑=草稿（纸面） · 紫圈=圈选（此画布内不触发提问）</div>
+        </div>
+      </div>
+      <div class="tag" style="left:60px; top:500px;">入口：工具栏「草」/ 左缘左滑掀纸 / 右缘书签（范围覆盖当前页时出现）</div>
+    </div>
+    <ul class="notes">
+      <li>「+1页」把锚定范围下缘拉长一页；读出范围自动收起书签</li>
+      <li>草稿独立持久化 draft_*.json，退出自动保存</li>
+    </ul>
+  </section>
+
+  <!-- ⑤ 分章夹子 -->
+  <section class="frame">
+    <div class="cap">④b 夹页模式（新开一章） <em>clampMode（二阶段新增）</em></div>
+    <div class="tablet">
+      <div class="toolbar">
+        <span class="dimtxt">第一章 · P4</span>
+        <span class="sp"></span>
+        <button class="btn small">已索引</button>
+      </div>
+      <div class="page" style="left:24px; right:24px; top:36px; height:250px; opacity:.85;">
+        <div class="tl"></div><div class="tl"></div><div class="tl"></div><div class="fig"></div><div class="tl"></div>
+      </div>
+      <div class="page" style="left:24px; right:24px; top:290px; height:200px; opacity:.85;">
+        <div class="tl"></div><div class="tl"></div>
+      </div>
+      <div style="position:absolute; left:0; right:0; top:280px; border-top:2px dashed var(--liq); z-index:45;"></div>
+      <div class="tag" style="right:36px; top:262px;">对准 P4</div>
+      <div style="position:absolute; left:0; right:0; bottom:0; background:rgba(17,17,17,.95); padding:10px; text-align:center; z-index:46;">
+        <div style="color:#ccc; font-size:12px;">上下滑动，把虚线对准章末</div>
+        <div style="margin-top:8px; display:flex; gap:8px; justify-content:center;">
+          <button class="btn">取消</button>
+          <button class="btn vio">确认夹入</button>
+        </div>
+      </div>
+    </div>
+    <ul class="notes"><li>点「夹页（新开一章）」→ 虚线固定屏幕中央；上下滑动对准章末 → 确认即在当前章内拆分（越界自动夹取）</li></ul>
+  </section>
+
+  <section class="frame">
+    <div class="cap">⑤ 分章夹子面板 <em>chapterPanelOpen（自动分章 + 夹子修正）</em></div>
+    <div class="tablet">
+      <div class="page" style="left:24px; right:24px; top:36px; height:240px; opacity:.25;">
+        <div class="tl"></div><div class="tl"></div><div class="fig"></div>
+      </div>
+      <div class="chap-panel">
+        <div class="h">
+          <div style="flex:1">
+            <div class="t">分章夹子</div>
+            <div class="nudge">要不要先夹一章？跳过也不影响任何功能</div>
+          </div>
+          <button class="btn small">收起</button>
+        </div>
+        <button class="btn vio" style="height:28px; font-size:12px;">识章（扫描书：视觉读目录页）</button>
+        <div class="chap-row">
+          <span class="t">卷一 · 初识C++  P1-P10</span>
+          <button class="btn">拆</button><button class="btn">合</button><button class="btn">缝</button>
+        </div>
+        <div class="chap-row">
+          <span class="t">卷二 · 顺序结构  P11-P24</span>
+          <button class="btn">拆</button><button class="btn">合</button><button class="btn">缝</button>
+        </div>
+        <div class="chap-row" style="border:1px solid var(--liq);">
+          <input value="未命名" style="flex:1; background:#161616; border:none; border-radius:4px; color:#eee; font-size:12px; height:24px; padding:0 6px; outline:none;">
+          <button class="btn vio" style="font-size:11px; height:24px;">定名</button>
+        </div>
+        <div class="chap-row">
+          <span class="t">动态规划  P210-P327</span>
+          <button class="btn">拆</button><button class="btn">合</button><button class="btn">缝</button>
+        </div>
+      </div>
+      <div class="tag" style="left:24px; top:496px;">点章名 → 改名；「拆」按当前阅读页夹入 · 「缝」拖动章缝（越界自动夹取）· 全部操作即写盘</div>
+    </div>
+    <ul class="notes">
+      <li>自动分章打底（PDF 书签 / 垃圾书签防御 / T2 视觉识章），夹子只做修正且即时持久化</li>
+      <li>全书仅一章时面板出现「轻问」+「识章」按钮</li>
+    </ul>
+  </section>
+
+  <!-- ⑥ 管家 -->
+  <section class="frame">
+    <div class="cap">⑥ 书房管家 · 今日一页 <em>StudyRoomView（纯被动，SM-2 排期）</em></div>
+    <div class="tablet">
+      <div class="study-head">
+        <button class="btn">← 书房</button>
+        <span class="t">管家</span>
+        <span class="st">共 12 卡</span>
+        <span class="st">问答 8</span>
+      </div>
+      <div class="quiz">
+        <div class="due">待复习 3</div>
+        <div class="from">深入浅出程序设计竞赛（书样） · P5</div>
+        <div style="display:flex; gap:10px;"><div style="flex:1;"><div class="q">用中文解释这一页的核心概念，面向初学者</div></div><img src="assets/mascot.png" style="width:64px; height:64px; object-fit:contain;" alt="扁平吉祥物"></div>
+        <div class="a">傅里叶变换把时域信号分解为频率成分，与傅里叶级数的关系是……（来自你当时的提问存档）</div>
+        <div class="grades">
+          <button class="btn">忘了</button>
+          <button class="btn">想起</button>
+          <button class="btn" style="background:#0a84ff; opacity:.7;">记得</button>
+          <button class="btn vio">秒答</button>
+        </div>
+      </div>
+      <div class="archive-h">问答归档（点击回跳原文）</div>
+      <div class="qa-row"><div class="m">深入浅出程序设计竞赛（书样） · 卷二 · P14</div><div class="q">用中文解释这一页的核心概念……</div></div>
+      <div class="qa-row"><div class="m">信号与系统（扫描版） · 全书 · P22</div><div class="q">圈选区域的概念是什么……</div></div>
+    </div>
+    <ul class="notes">
+      <li>纯被动：只住在书房，绝不进入阅读界面；测验材料 = 你自己的圈选提问沉淀</li>
+      <li>四档自评接 SM-2：忘了(1) 想起(3) 记得(4) 秒答(5) → 间隔按 ease 推进</li>
+      <li>归档按（书,章,页）排序，点击经 initialPage 跳回原文页</li>
+    </ul>
+  </section>
+
+</div>
+
+<footer style="margin-top:40px; color:var(--faint); font-size:12px; line-height:2; max-width:960px;">
+  实现注记：本图按当前代码状态 1:1 绘制，布局与配色取自 ArkTS 实际取值（#111 底 / #1E1E1E 卡 / 液态彩 #0A84FF / 发丝线 #333）。
+  真机上待打磨项：OCR 转录质量、动画跟手度、左滑阈值手感、扫描页渲染清晰度。扫描书 T1/T2/T3 与原生书共用同一套界面，仅上下文来源不同（四级降级管线）。
+</footer>
+</body>
+</html>
