@@ -20,3 +20,5 @@
 
 # 签名材料备份（含明文口令，绝不入库）
 /.signing-config.backup.json5
+# 真机崩溃日志（tools/faultlog.mjs 的落盘目录）：含设备信息，不入库
+/faultlog/
