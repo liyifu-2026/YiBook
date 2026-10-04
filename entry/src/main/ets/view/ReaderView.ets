@@ -159,6 +159,8 @@ export struct ReaderView {
   }
 
   @State breatheOut: boolean = false;
+  // 呼吸律动的定时器句柄（-1 = 未运行）。只在确有「思考中」气泡时运行。
+  private breatheTimer: number = -1;
   @State showConfig: boolean = false;
   @State indexStatus: string = '';
   @State analysisStatus: string = '';
@@ -188,6 +190,10 @@ export struct ReaderView {
   private scroller: Scroller = new Scroller();
   private viewWidth: number = 0;
   private viewportHeight: number = 0;
+  // 布局重试：视口尺寸（onAreaChange）与页面网格（prepareCore）来自两个事件，
+  // 谁先到不确定；早期返回时排有限次重试，避免「永远建不出布局」。
+  private layoutRetry: number = -1;
+  private layoutRetryLeft: number = 0;
   private layoutReady: boolean = false;
   private pending: Set<number> = new Set();
   private lastSavedWater: number = -1; // 上次落盘的高水位（节流用）
@@ -228,6 +234,14 @@ export struct ReaderView {
   }
 
   aboutToDisappear(): void {
+    if (this.layoutRetry !== -1) {
+      clearTimeout(this.layoutRetry);
+      this.layoutRetry = -1;
+    }
+    if (this.breatheTimer !== -1) {
+      clearInterval(this.breatheTimer);
+      this.breatheTimer = -1;
+    }
     this.flushInk();
     this.saveOcr();
     this.saveProgress();
@@ -235,6 +249,32 @@ export struct ReaderView {
     this.saveReview();
     KnowledgeBase.shared().unregister(this.inkKey);
     this.source.close();
+  }
+
+  // 「思考中」气泡的呼吸律动。
+  //
+  // 为什么不用根级无限动画：原先 build() 的 onAppear 里跑 animateTo({ iterations: -1 })
+  // 驱动 breatheOut，等于让整个阅读器**每帧重渲染**（一整棵包含 24 页槽位的树）。
+  // 改为只在确有 Thinking 气泡时用定时器翻转状态，动画本身挂在气泡元素上。
+  private syncBreathe(): void {
+    let thinking = false;
+    for (const b of this.bubbles) {
+      if (b.phase === BubblePhase.Thinking) {
+        thinking = true;
+        break;
+      }
+    }
+    if (thinking) {
+      if (this.breatheTimer === -1) {
+        this.breatheTimer = setInterval((): void => {
+          this.breatheOut = !this.breatheOut;
+        }, 2500);
+      }
+    } else if (this.breatheTimer !== -1) {
+      clearInterval(this.breatheTimer);
+      this.breatheTimer = -1;
+      this.breatheOut = false;
+    }
   }
 
   // 开书外壳：任何一步异常都不能静默空白——落错误态并留日志
@@ -304,6 +344,8 @@ export struct ReaderView {
       this.sampleGrids.push(this.probeGrid);
       this.pageCrops.push(null);
     }
+    // 允许布局重试：此刻 onAreaChange 可能还没到（viewWidth 仍是 0）
+    this.layoutRetryLeft = 30;
     this.rebuildLayout();
     if (isNew && this.chapters.length <= 1) {
       // 「要不要先夹一章？」轻问：自动展开夹子面板，跳过也完全不影响功能
@@ -376,6 +418,19 @@ export struct ReaderView {
 
   private rebuildLayout(): void {
     if (this.sampleGrids.length === 0 || this.viewWidth <= 0) {
+      // 这里**绝不能静默返回**。viewWidth 来自容器的 onAreaChange、sampleGrids 来自
+      // prepareCore，两个事件谁先到不确定；两者先后不巧时会一路跳过，而此后没有任何事件
+      // 再触发布局——表现为「书打开了、工具栏都在，但一页都不渲染」，且日志里一句错都没有
+      //（真机实测：Image 节点 0 个、页码恒为 P1）。
+      hilog.warn(0x0000, 'ReaderView',
+        `rebuildLayout pending grids=${this.sampleGrids.length} viewWidth=${this.viewWidth} retryLeft=${this.layoutRetryLeft}`);
+      if (this.layoutRetry === -1 && this.layoutRetryLeft > 0) {
+        this.layoutRetry = setTimeout((): void => {
+          this.layoutRetry = -1;
+          this.layoutRetryLeft--;
+          this.rebuildLayout();
+        }, 100);
+      }
       return;
     }
     const tops: Array<number> = [];
@@ -477,6 +532,7 @@ export struct ReaderView {
     const id = this.questionCount;
     this.bubbles.push(bubbleOnQuestion(id, pageIndex, bbox.top));
     this.gestureBoxes.set(id, bbox);
+    this.syncBreathe();
     hilog.info(0x0000, 'ReaderView',
       `question gesture @page=${pageIndex} pageBBox=(${bbox.left},${bbox.top},${bbox.right},${bbox.bottom})`);
     // 演示态（未配 key 时）：1.5s 模拟回答完成、再过 2.5s 收敛；配置后走真实问答流
@@ -484,10 +540,12 @@ export struct ReaderView {
       setTimeout((): void => {
         this.bubbles = this.bubbles.map((b: QuestionBubble): QuestionBubble =>
           b.id === id ? markAnswerReady(b) : b);
+        this.syncBreathe();
       }, 1500);
       setTimeout((): void => {
         this.bubbles = this.bubbles.map((b: QuestionBubble): QuestionBubble =>
           b.id === id ? markSettled(b) : b);
+        this.syncBreathe();
       }, 4000);
     }
   }
@@ -1270,6 +1328,8 @@ export struct ReaderView {
             x: b.phase === BubblePhase.Thinking ? (this.breatheOut ? 1.08 : 1) : 1,
             y: b.phase === BubblePhase.Thinking ? (this.breatheOut ? 1.08 : 1) : 1
           })
+          // 呼吸动画挂在气泡自己身上（原先是根 Stack 上的无限动画）
+          .animation({ duration: 2500, curve: Curve.EaseInOut })
           .position({ x: 4, y: this.bubbleViewportY(b) - this.dotSize(b) / 2 })
           .onClick(() => {
             this.onBubbleTap(b);
@@ -1962,15 +2022,7 @@ export struct ReaderView {
     .width('100%')
     .height('100%')
     .backgroundColor('#101E33')
-    .onAppear((): void => {
-      this.getUIContext().animateTo({
-        duration: 2500,
-        curve: Curve.EaseInOut,
-        iterations: -1,
-        playMode: PlayMode.Alternate
-      }, () => {
-        this.breatheOut = true;
-      });
-    })
+    // 这里**不能**放 animateTo({ iterations: -1 })：根级无限动画会让整棵树每帧重渲染
+    //（一整棵含 24 页槽位的树），是持续卡顿的来源。气泡呼吸见 syncBreathe()。
   }
 }
