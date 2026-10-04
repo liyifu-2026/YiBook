@@ -4,7 +4,8 @@ import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BBox } from './CropMath';
 import { SampleGrid, downsampleGrid, regionForBBox } from './CropPipeline';
-import { OutlineMarker } from '../book/ChapterModel';
+import { OutlineMarker } from '../core/DocModel';
+import { PageImageSource } from '../core/Ports';
 
 export interface PageSize {
   width: number;
@@ -16,7 +17,7 @@ export interface PageSample {
   grid: SampleGrid;
 }
 
-export class PdfPageSource {
+export class PdfPageSource implements PageImageSource {
   private doc: pdfService.PdfDocument | null = null;
 
   open(path: string): boolean {
@@ -105,6 +106,12 @@ export class PdfPageSource {
       await pm.crop(region);
     }
     return this.opaqueCopyBase64(pm, 80);
+  }
+
+  // core/Ports.PageImageSource 的适配：OCR 只要整页图，不需要裁框。
+  // 等价于 regionJpegBase64(index, null, 任意栅格, 任意 padRatio)——bbox 为 null 时后两者不被使用。
+  async pageJpegBase64(index: number): Promise<string> {
+    return this.regionJpegBase64(index, null, downsampleGrid(1, 1, 1), 0);
   }
 
   // 渲染整页（含簇裁剪）→ 独立像素副本（白底不透明）。

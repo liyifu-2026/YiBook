@@ -1,17 +1,20 @@
-import { PdfPageSource } from '../pdf/PdfPageSource';
 import { chunkText } from '../search/Chunker';
 import { textHash, planMissing, assembleVectors } from './IndexerMath';
-import { EmbeddingClient } from '../ai/EmbeddingClient';
-import { IndexCache, CacheData } from './IndexCache';
 import { OcrTexts } from './OcrTexts';
-import { VisionClient } from '../ai/VisionClient';
-import { downsampleGrid, SampleGrid } from '../pdf/CropPipeline';
 import { LexicalIndex } from '../search/LexicalIndex';
 import { VectorIndex } from '../search/VectorIndex';
 import { IndexedChunk } from '../search/SearchOrchestrator';
+import { PageImageSource, PageTextSource, PageVision, TextEmbedder, VectorCache } from '../core/Ports';
 
 // 建书编排器（AGENTS.md 管线：文本提取→切分→哈希→缓存命中→增量 embedding→双索引）。
 // 纯 T0：只索引有文字层的页；扫描页留给 T1/T3。
+//
+// 本类只依赖 core/Ports 的抽象（PageImageSource / PageTextSource / TextEmbedder /
+// PageVision / VectorCache），不 import ai 域与 pdf 域的任何具体实现：
+//   - 消除 book ↔ ai、book ↔ pdf 两处域级交叉引用；
+//   - 让编排逻辑可脱离 @kit 在本地单测中验证
+//     （实测本地单测运行时无法执行 @kit 文件 IO 与网络）。
+// 具体实现由调用方（view/ReaderView）组装后注入。
 
 const CHUNK_TARGET = 400;
 const CHUNK_MAX = 600;
@@ -26,7 +29,7 @@ export interface BuildResult {
 
 export class BookIndexer {
   // T3：全书 OCR——只转录缺失页，文字层页直接标记为已覆盖
-  async ensureOcr(source: PdfPageSource, ocrTexts: OcrTexts, vision: VisionClient,
+  async ensureOcr(source: PageImageSource, ocrTexts: OcrTexts, vision: PageVision,
     pageCount: number, maxPages: number,
     onProgress: (done: number, total: number) => void): Promise<number> {
     if (!vision.available()) {
@@ -47,11 +50,10 @@ export class BookIndexer {
     if (total === 0) {
       return 0;
     }
-    const dummyGrid: SampleGrid = downsampleGrid(1, 1, 1);
     let done = 0;
     for (const i of missing) {
       try {
-        const b64 = await source.regionJpegBase64(i, null, dummyGrid, 0);
+        const b64 = await source.pageJpegBase64(i);
         if (b64 !== '') {
           const text = await vision.extractText(b64, 'image/jpeg');
           // 只缓存非空转录：网络失败留在缺失集，下次索引可重试（空文本不哑雷）
@@ -68,8 +70,8 @@ export class BookIndexer {
     return total;
   }
 
-  async build(source: PdfPageSource, pageCount: number, maxPages: number,
-    embed: EmbeddingClient | null, cacheDir: string, bookKey: string,
+  async build(source: PageTextSource, pageCount: number, maxPages: number,
+    embed: TextEmbedder | null, cache: VectorCache,
     onProgress: (done: number, total: number) => void,
     ocrTexts: OcrTexts | null): Promise<BuildResult> {
     const total = Math.min(pageCount, maxPages);
@@ -111,14 +113,14 @@ export class BookIndexer {
       }
     }
     const vector = new VectorIndex();
-    const cache = IndexCache.load(cacheDir, bookKey);
+    const cached = cache.load();
     // 维度以缓存为准；无缓存时推迟到首个真实向量落地后再定——硬编码 1024 会让
     // 1536/2048 维模型整链失败且永不落缓存、重复计费
-    let dims = cache !== null && cache.dims > 0 ? cache.dims : 0;
+    let dims = cached !== null && cached.dims > 0 ? cached.dims : 0;
     let embeddedCount = 0;
     let dimError = false;
     const plan = planMissing(chunkHashes,
-      cache !== null ? cache.hashes : [], cache !== null ? cache.data : new Float32Array(0), dims);
+      cached !== null ? cached.hashes : [], cached !== null ? cached.data : new Float32Array(0), dims);
     const missingIdx = plan.missingIdx;
     if (embed !== null && embed.available() && missingIdx.length > 0) {
       const missingTexts: Array<string> = [];
@@ -154,7 +156,7 @@ export class BookIndexer {
     }
     // 只有全部块都拿到合法向量时才落缓存（部分失败可重试）；维度不符视为配置错误不落缓存
     if (asm.embeddedCount === chunkTexts.length && chunkTexts.length > 0 && !dimError) {
-      IndexCache.save(cacheDir, bookKey, chunkHashes, dims, asm.data);
+      cache.save(chunkHashes, dims, asm.data);
     }
     const chunks: Array<IndexedChunk> = [];
     for (let i = 0; i < chunkTexts.length; i++) {

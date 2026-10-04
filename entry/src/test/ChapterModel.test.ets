@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { chaptersFromOutline, chapterAt, split, mergeNext, rename, moveBoundary,
-  OutlineMarker, Chapter } from '../main/ets/book/ChapterModel';
+import { chaptersFromOutline, chapterAt, split, mergeNext, rename, moveBoundary } from '../main/ets/book/ChapterModel';
+import { OutlineMarker, Chapter } from '../main/ets/core/DocModel';
 
 function marker(title: string, page: number): OutlineMarker {
   const m: OutlineMarker = { title: title, page: page };

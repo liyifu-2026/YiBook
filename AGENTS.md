@@ -14,6 +14,7 @@
 2. **TDD 纵切**：一次一个行为，RED→GREEN→重构；测试走公共接口、描述行为而非实现。纯逻辑与 ArkUI 严格分离——`entry/src/main/ets/<域>/` 下的算法模块禁止 import `@ohos.*` 与 ArkUI，保证本地单测可跑。
 3. **先跑通再优化**：性能问题先测（hilog 计时/Profiler），有数据再改。
 4. 测试夹具放 `entry/src/test/fixtures/`（逻辑测试）与 `entry/src/main/resources/rawfile/`（应用运行时资源）。
+5. **本地单测不能碰 `@kit`**：本地单测跑在主机上，实测**无法执行 `@kit` 文件 IO 与网络**（`writeJsonFile` 返回 `false`）。凡是要 IO 的编排逻辑，必须把依赖抽成 `core/Ports` 里的端口、由页面层注入具体实现，单测注入纯内存替身——范例见 `book/BookIndexer` 与 `entry/src/test/BookIndexer.test.ets`。判据要用正控制（`writeJsonFile(...) === true`），别用 `fileExists`：它 catch 掉一切异常返回 false，分不清「@kit 不可用」和「文件不存在」。
 
 ## 工具链（本机）
 
@@ -26,7 +27,7 @@
   - 用例结果唯一凭据：`entry/.test/default/intermediates/test/coverage_data/test_result.txt`（守护进程日志不含 pass/fail）
   - 无设备编译验证（改 ArkUI/kit 相关代码后必跑）：`node "F:\deveco\DevEco Studio\tools\hvigor\bin\hvigorw.js" assembleHap`
 - SDK：HarmonyOS 6.1.1(24)（build-profile  compatibleSdkVersion）
-- 测试框架：`@ohos/hypium`（本地单测在 `entry/src/test/`，入口 `List.test.ets` 的 `testsuite()` 注册；当前 33 个测试文件 / 106 用例）
+- 测试框架：`@ohos/hypium`（本地单测在 `entry/src/test/`，入口 `List.test.ets` 的 `testsuite()` 注册；当前 34 个测试文件 / 119 用例）
 - 真机部署：hdc 在 `F:\deveco\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe`；一键脚本 `bash device-run.sh`（构建→安装→启动→hilog，`log` 参数只看日志）；`bash devtap.sh "<文本>" [dy]` 按文本定位组件点按（真机冒烟）。前置：DevEco 里 File > Project Structure > Signing Configs 勾选 Automatically generate signature——真机 profile 绑定「包名+设备 UDID」，OpenHarmony 自签材料不适用于华为商用平板。包名 `com.leaif.yibook`，测试平板 TGR-W10。
 - 双 agent 协作边界：UI 视觉由独立 agent 负责（`entry/src/main/ets/view/` 下的 LibraryView/ReaderView/StudyRoomView、`ink/PageInkCanvas`、`pages/Index`）；功能/管线归本工程。**注：2026-10-04 已把源码从扁平的 `reading/` 拆为 8 个业务域，界面文件路径变为 `view/`（详见 `ARCHITECTURE.md`）**。改共享文件前先 `ls -lt entry/src/main/ets/**` 确认对方已静默 ≥2 分钟，部署前同样，避免把半成品打进包。
 - 书写交互铁律（用户定调，无可妥协）：**手指永远滚动、只有触控笔才书写**——PageInkCanvas 用 `touches[i].sourceTool === SourceTool.Pen` 过滤（SDK TouchObject.sourceTool 可用，此前误判不可用）；笔的颜色/粗细配置放阅读之外（配好再进来），橡皮擦放阅读之内——UI 侧约定。

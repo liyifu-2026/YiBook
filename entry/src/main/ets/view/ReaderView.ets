@@ -8,7 +8,8 @@ import { transformForCrop, DisplayTransform } from '../pdf/ReaderGeometry';
 import { findInkBBox, clusterByParity, BBox } from '../pdf/CropMath';
 import { parityCropFor, downsampleGrid, regionHint, SampleGrid } from '../pdf/CropPipeline';
 import { PdfPageSource } from '../pdf/PdfPageSource';
-import { chaptersFromOutline, chapterAt, split, mergeNext, rename, moveBoundary, Chapter } from '../book/ChapterModel';
+import { chaptersFromOutline, chapterAt, split, mergeNext, rename, moveBoundary } from '../book/ChapterModel';
+import { Chapter, OutlineMarker } from '../core/DocModel';
 import { InkStore } from '../ink/InkStore';
 import { PageInkCanvas } from '../ink/PageInkCanvas';
 import { bubbleOnQuestion, markAnswerReady, markSettled, anchorScrollY, projectToViewport,
@@ -21,6 +22,7 @@ import { selectBlocks, filterRead, IndexedChunk } from '../search/SearchOrchestr
 import { LexicalIndex } from '../search/LexicalIndex';
 import { VectorIndex } from '../search/VectorIndex';
 import { BookIndexer, BuildResult } from '../book/BookIndexer';
+import { IndexCache } from '../book/IndexCache';
 import { OcrTexts, OcrRecord } from '../book/OcrTexts';
 import { isLeftSwipe, extendCap } from '../ink/Gestures';
 import { textHash } from '../book/IndexerMath';
@@ -34,7 +36,6 @@ import { ReviewQueue, QuizCard } from '../review/ReviewQueue';
 import { QaRecord } from '../ai/Qa';
 import { bubblesFromQa, QaAnchor } from '../ink/BubbleModel';
 import { markersFromTocText } from '../pdf/ScanPipeline';
-import { OutlineMarker } from '../book/ChapterModel';
 
 // 长卷阅读壳：开书先只探测第 0 页定纵横比，立即全页渲染出首帧；
 // 整书裁剪分析（逐页降采样 → 墨迹包围盒 → 奇偶簇）转后台分批跑，完成后重排应用裁剪。
@@ -1037,8 +1038,9 @@ export struct ReaderView {
     const embed = new EmbeddingClient(this.byok.embedBaseUrl, this.byok.apiKey, this.byok.embedModel);
     const ctx = getContext(this) as common.UIAbilityContext;
     const indexer = new BookIndexer();
-    const result = await indexer.build(this.source, n, this.indexCap, embed,
-      ctx.filesDir + '/index', this.inkKey, (_done: number, _total: number): void => {
+    const cache = new IndexCache(ctx.filesDir + '/index', this.inkKey);
+    const result = await indexer.build(this.source, n, this.indexCap, embed, cache,
+      (_done: number, _total: number): void => {
       }, this.ocrTexts);
     this.indexedChunks = result.chunks;
     this.lexical = result.lexical;

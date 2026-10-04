@@ -1,18 +1,10 @@
 // 章节骨架：自动分章（PDF 书签）打底，分章夹子只做修正（调研报告决策 #1）。
 // 所有操作均为纯函数、拷贝后返回；不变式：按 firstPage 升序、连续覆盖 [0, pageCount-1]。
+//
+// 注：OutlineMarker / Chapter 两个纯数据类型已下沉到 core/DocModel，
+// 因为 pdf（书签抽取）与 ai（建书摘要）都要用，留在本域会形成 pdf → book、ai → book 交叉。
 
-export interface OutlineMarker {
-  title: string;
-  page: number;
-}
-
-export interface Chapter {
-  id: number;
-  title: string;
-  firstPage: number;
-  lastPage: number;
-  manual: boolean;
-}
+import { Chapter, OutlineMarker } from '../core/DocModel';
 
 function copyWith(chapter: Chapter, title: string, firstPage: number, lastPage: number,
   manual: boolean): Chapter {

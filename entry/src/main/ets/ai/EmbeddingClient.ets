@@ -1,12 +1,13 @@
 import { http } from '@kit.NetworkKit';
-import { batchTexts } from '../book/IndexerMath';
+import { batchTexts } from '../core/Batching';
+import { TextEmbedder } from '../core/Ports';
 
 // BYOK embeddings：OpenAI 兼容 /embeddings（Qwen text-embedding-v3、
 // SiliconFlow bge-m3 等）。DeepSeek 无 embeddings 接口，留空即关闭向量路。
 
 const EMBED_BATCH = 16;
 
-export class EmbeddingClient {
+export class EmbeddingClient implements TextEmbedder {
   private baseUrl: string;
   private apiKey: string;
   private model: string;

@@ -1,4 +1,5 @@
 import { http } from '@kit.NetworkKit';
+import { PageVision } from '../core/Ports';
 
 // T1 圈选即 OCR：视觉 LLM（OpenAI 兼容多模态 /chat/completions，
 // Qwen-VL / GLM-4V / SiliconFlow VL 系列）。构造器为纯函数可测。
@@ -32,7 +33,7 @@ export function buildVisionMessages(system: string, userText: string, imageBase6
   return msgs;
 }
 
-export class VisionClient {
+export class VisionClient implements PageVision {
   private baseUrl: string;
   private apiKey: string;
   private model: string;

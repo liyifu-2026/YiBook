@@ -1,4 +1,5 @@
-// 建书编排的纯函数零件：内容哈希（防重复 embedding 计费）与批量切分。
+// 建书编排的纯函数零件：内容哈希（防重复 embedding 计费）、缓存查找与向量装配。
+// 注：batchTexts 已下沉到 core/Batching（ai/EmbeddingClient 也要用它，留在本域会形成 ai → book 交叉）。
 
 export function textHash(s: string): string {
   let h = 5381;
@@ -8,23 +9,6 @@ export function textHash(s: string): string {
   const hex = (h >>> 0).toString(16);
   const padded = '00000000'.substring(0, 8 - hex.length) + hex;
   return `${padded}_${s.length}`;
-}
-
-export function batchTexts(texts: Array<string>, maxBatch: number): Array<Array<string>> {
-  const size = maxBatch < 1 ? 1 : maxBatch;
-  const batches: Array<Array<string>> = [];
-  let current: Array<string> = [];
-  for (const t of texts) {
-    current.push(t);
-    if (current.length >= size) {
-      batches.push(current);
-      current = [];
-    }
-  }
-  if (current.length > 0) {
-    batches.push(current);
-  }
-  return batches;
 }
 
 // embedding 缓存查找：命中返回该块向量，未命中或维度不符返回 null

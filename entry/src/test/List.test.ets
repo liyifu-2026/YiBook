@@ -30,6 +30,7 @@ import knowledgeBaseTest from './KnowledgeBase.test';
 import ocrTextsTest from './OcrTexts.test';
 import gesturesTest from './Gestures.test';
 import qaTest from './Qa.test';
+import bookIndexerTest from './BookIndexer.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -64,4 +65,5 @@ export default function testsuite() {
   ocrTextsTest();
   gesturesTest();
   qaTest();
+  bookIndexerTest();
 }

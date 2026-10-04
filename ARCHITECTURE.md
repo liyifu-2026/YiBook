@@ -24,11 +24,11 @@ entry/src/main/ets/
 ├── pdf/                 │
 ├── review/              ┘
 │
-└── core/                ← 通用基础设施（第 1 层）
-    JsonFile / Sse / Theme
+└── core/                ← 通用基础设施与共享契约（第 1 层）
+    JsonFile / Sse / Theme / Ports / DocModel / Batching
 ```
 
-**共 8 个业务域 + 3 个固定入口目录，42 个模块。**
+**共 8 个业务域 + 3 个固定入口目录，45 个模块。**
 
 `pages/Index.ets` 必须留在 `pages/`：`entry/src/main/resources/base/profile/main_pages.json` 按 `"pages/Index"` 引用它，移动会导致应用起不来。
 
@@ -38,7 +38,7 @@ entry/src/main/ets/
 
 | 域 | 职责 | 模块 |
 |---|---|---|
-| **core** | 与业务无关的基础设施：文件读写、SSE 流解析、配色 | `JsonFile` `Sse` `Theme` |
+| **core** | 与业务无关的基础设施 + 跨域共享契约：文件读写、SSE 流解析、配色、**端口接口**、**共享纯数据类型** | `JsonFile` `Sse` `Theme` `Ports` `DocModel` `Batching` |
 | **pdf** | PDF 取页与长卷几何：渲染窗、连续布局、裁白边、屏幕↔页面坐标变换 | `PdfPageSource` `RenderWindow` `ContinuousLayout` `ReaderGeometry` `CropMath` `CropPipeline` `ScanPipeline` |
 | **book** | 书架、章节模型、索引构建与缓存、已读水位 | `BookshelfModel` `ChapterModel` `BookIndexer` `IndexerMath` `IndexCache` `OcrTexts` `ReadingProgress` |
 | **search** | 本地双路检索与融合：分块、词法、向量、RRF+MMR、路由 | `Chunker` `LexicalIndex` `VectorIndex` `RankFusion` `QueryRouter` `SearchOrchestrator` `KnowledgeBase` |
@@ -54,11 +54,11 @@ entry/src/main/ets/
 以源码中实际的 `import` 统计（数字为引用处数）：
 
 ```
-view ──> ai(9) book(8) core(5) ink(6) pdf(9) review(2) search(5)
-book ──> ai(2) pdf(2) search(4)
-ai   ──> book(2) core(1)
+view ──> ai(9) book(8) core(6) ink(6) pdf(9) review(2) search(5)
+book ──> core(3) search(4)
+ai   ──> core(5)
 ink  ──> pdf(4)
-pdf  ──> book(2)
+pdf  ──> core(3)
 search ─> ai(1)
 core ──> （无出边）
 review ─> （无出边）
@@ -66,18 +66,36 @@ review ─> （无出边）
 
 - **`view` 是唯一的严格顶层**：它对全部 7 个业务域都有出边，且没有任何域依赖 `view`。
 - **`core` 与 `review` 是叶子**：不依赖任何其他域。
-- 全图 **15 条跨域边，无模块级循环依赖**（已用 DFS 着色验证）。
+- 全图 **13 条跨域边，无模块级循环依赖**（已用 DFS 着色验证）。
+- **无任何两域互相引用**——曾经的 `ai ↔ book`、`book ↔ pdf` 已消除（见下）。
+- 仅存两处**单向**的类型级依赖，不构成环：`ink → pdf`（取 `BBox` / `DisplayTransform`）、`search → ai`（取 `SourceBlock`）。若想彻底让 `search` 也变成叶子，把 `SourceBlock` 一并下沉 `core/DocModel` 即可。
 
-### 已知交叉：`ai ↔ book` 与 `book ↔ pdf`
+### 已消除的域级交叉（2026-10-04）
 
-域标签层面存在两处**互相引用**，但都由不同模块承担，因此**不是真正的循环依赖**：
+改造前有两处域级互引，现已彻底消除，手段是**端口契约 + 共享类型下沉**：
 
-- `book/BookIndexer` → `ai/EmbeddingClient`、`ai/VisionClient`（索引要调向量/视觉）
-- `ai/ContextSummary` → `book/ChapterModel`（摘要要读章节结构）
-- `book/BookIndexer` → `pdf/PdfPageSource`、`pdf/CropPipeline`（索引要取页与降采样）
-- `pdf/PdfPageSource`、`pdf/ScanPipeline` → `book/ChapterModel`（要 `OutlineMarker` 类型）
+| 原交叉 | 成因 | 处置 |
+|---|---|---|
+| `book → ai` | `BookIndexer` 直接 `new EmbeddingClient` / `VisionClient` | 改为依赖 `core/Ports` 的 `TextEmbedder` / `PageVision`，具体实现由 `view/ReaderView` 注入 |
+| `ai → book` | `ContextSummary` 要 `Chapter` 类型；`EmbeddingClient` 要 `batchTexts` | `Chapter`/`OutlineMarker` 下沉 `core/DocModel`；`batchTexts` 下沉 `core/Batching` |
+| `book → pdf` | `BookIndexer` 直接用 `PdfPageSource` / `CropPipeline` | 改为依赖 `core/Ports` 的 `PageTextSource` / `PageImageSource`，由 `PdfPageSource` 实现 |
+| `pdf → book` | `PdfPageSource`、`ScanPipeline` 要 `OutlineMarker` 类型 | 同上，类型下沉 `core/DocModel` |
 
-这是当前最大的结构债：`ChapterModel` 被 `pdf` 当作纯数据类型依赖，而 `BookIndexer` 把「编排」和「领域」混在一起。若将来要严格分层，建议把 `BookIndexer` 提到独立的编排域（如 `pipeline/`），并把 `OutlineMarker` 这类纯数据类型下沉到共享模型域。**当前不阻塞开发，未做处理。**
+### 端口契约与本地可测性
+
+`core/Ports.ets` 是**纯契约**（不含 `@kit`），定义 5 个端口：
+
+| 端口 | 语义 | 实现方 |
+|---|---|---|
+| `TextEmbedder` | 文本向量化（可缺席，缺席时检索退化为词法单路） | `ai/EmbeddingClient` |
+| `PageVision` | 图像文字识别（OCR） | `ai/VisionClient` |
+| `VectorCache` | 向量缓存读写（跨会话零重复计费） | `book/IndexCache` |
+| `PageTextSource` | 页面文字层直提 | `pdf/PdfPageSource` |
+| `PageImageSource` | 整页 JPEG（供 OCR） | `pdf/PdfPageSource` |
+
+**为什么必须这么做（实测结论，非推测）**：本地单测跑在主机上，**无法执行 `@kit` 文件 IO 与网络**——`writeJsonFile` 会返回 `false`。因此只要编排层直接依赖 `IndexCache` 这类设备模块，它就永远不可能被本地单测覆盖。抽成端口后，`BookIndexer` 的行为已由 13 个用例以纯内存替身锁定（`entry/src/test/BookIndexer.test.ets`）。
+
+> **测过才会踩的坑**：`fileExists` / `readJsonFile` 内部 `catch` 掉全部异常并返回 `false` / `null`。所以「读一个不存在的文件得到 `false`」**无法区分**「`@kit` 不可用」与「文件确实不存在」，是个假阳性探针。判断本地能否做 IO，必须用 `writeJsonFile(...) === true` 这类**只有真正成功才可能为真**的正控制。
 
 ---
 
@@ -89,7 +107,7 @@ review ─> （无出边）
 
 | 域 | 纯逻辑 | 含系统 API(`@kit`) | 含 ArkUI | 小计 |
 |---|---:|---:|---:|---:|
-| core | 2 | 1 | 0 | 3 |
+| core | 5 | 1 | 0 | 6 |
 | pdf | 6 | 1 | 0 | 7 |
 | book | 6 | 1 | 0 | 7 |
 | search | **7** | 0 | 0 | 7 |
@@ -97,7 +115,7 @@ review ─> （无出边）
 | ink | 5 | 0 | 1 | 6 |
 | review | **2** | 0 | 0 | 2 |
 | view | 0 | 0 | 3 | 3 |
-| **合计** | **32** | **6** | **4** | **42** |
+| **合计** | **35** | **6** | **4** | **45** |
 
 - `search/` 与 `review/` 是 **100% 纯逻辑**，任何改动都必须有单测覆盖。
 - 6 个含系统 API 的模块：`core/JsonFile`、`pdf/PdfPageSource`、`book/IndexCache`、`ai/LlmClient`、`ai/EmbeddingClient`、`ai/VisionClient`。
@@ -116,7 +134,7 @@ review ─> （无出边）
 `ink/PageInkCanvas`（笔迹圈选）→ `ink/GestureMath` 判定手势 → `search/QueryRouter` 选路 → `search/SearchOrchestrator`（`LexicalIndex` + `VectorIndex` → `RankFusion` RRF → MMR top-6）→ `ai/PromptAssembler` 装配 → `ai/LlmClient` 流式作答 → `ai/AnswerParser` 校验引用 → `ai/Qa` 落库 → `ink/BubbleModel` 气泡。
 
 **建索引**
-`book/BookIndexer` → `pdf/PdfPageSource` 取页文本 → `book/OcrTexts`（扫描版走 OCR）→ `search/Chunker` 分块 → `book/IndexerMath` 规划缺口 → `ai/EmbeddingClient` 向量化 → `book/IndexCache` 缓存 → 写入 `search/LexicalIndex` + `search/VectorIndex`。
+`view/ReaderView` 注入端口实现（`PdfPageSource` → `PageImageSource`/`PageTextSource`，`EmbeddingClient` → `TextEmbedder`，`VisionClient` → `PageVision`，`IndexCache` → `VectorCache`）→ `book/BookIndexer` 取页文本 → `book/OcrTexts`（扫描版走 OCR）→ `search/Chunker` 分块 → `book/IndexerMath` 规划缺口 → `TextEmbedder.embed` 向量化 → `VectorCache.save` 落缓存 → 写入 `search/LexicalIndex` + `search/VectorIndex`。
 
 ---
 
@@ -148,7 +166,7 @@ node "F:\deveco\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p modu
 node "F:\deveco\DevEco Studio\tools\hvigor\bin\hvigorw.js" assembleHap
 ```
 
-当前基线：**33 个测试文件 / 106 用例全通过**；`assembleHap` 通过。
+当前基线：**34 个测试文件 / 119 用例全通过**；`assembleHap` 通过。
 
 > `build-profile.json5` 的 `signingConfigs` 已挖空（原含签名口令与设备证书路径）。
 > 本地原值备份在 `.signing-config.backup.json5`（已 gitignore，不入库）。
@@ -176,8 +194,9 @@ node "F:\deveco\DevEco Studio\tools\hvigor\bin\hvigorw.js" assembleHap
 
 ## 9. 已知技术债
 
-1. **`ai ↔ book`、`book ↔ pdf` 域级交叉引用**（见 §3），当前无环、不阻塞，但阻碍严格分层。
+1. ~~`ai ↔ book`、`book ↔ pdf` 域级交叉引用~~ **已消除**（2026-10-04，见 §3）。遗留两处**单向**类型级依赖：`ink → pdf`、`search → ai`，不构成环。
 2. **两个巨型视图**：`view/ReaderView.ets` 1823 行、`view/LibraryView.ets` 908 行，职责过载，是后续拆分重点。
-3. **双 agent 协作边界**：UI 视觉由独立 agent 负责。本次分域重构已移动全部界面文件路径（`reading/` → `view/`、`ink/` 等），该 agent 手上的旧路径全部失效，需同步告知。
-4. **`LibraryView_new.ets`** 是仓库根目录下的界面草稿（未被编译，import 仍指向旧路径 `./BookshelfModel`），需由 UI 侧决定是并入 `view/LibraryView.ets` 还是删除。
+3. **双 agent 协作边界**：UI 视觉由独立 agent 负责。分域重构已移动全部界面文件路径（`reading/` → `view/`、`ink/` 等），该 agent 手上的旧路径全部失效，需同步告知。
+4. ~~`LibraryView_new.ets` 草稿待定~~ **已删除**（2026-10-04）。它是截断的残缺草稿：82 个开括号对 71 个闭括号、**没有 `build()` 方法**、末尾停在表达式中间，根本无法编译；而现行的 `view/LibraryView.ets` 已远超它（953+ 行、5 个 `@Builder`、主题切换/封面轮换/缩略图/删除确认）。内容仍可从基线提交 `924d82a:LibraryView_new.ets` 取回。
 5. **`entry/src/main/resources/rawfile/sample_textbook.pdf` 实为扫描版**（无文字层、书签为逐页垃圾），文本锚定与章节提取的真验证仍需一份**带文字层 + 真书签**的原生 PDF。
+6. **`book/BookIndexer.ensureOcr` 尚无单测**：它的 `PageImageSource` 端口已就绪，但补测试仍需一个实现该端口的纯替身——目前只测了 `build` 路径（13 个用例）。
