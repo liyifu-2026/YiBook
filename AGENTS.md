@@ -63,12 +63,19 @@
   **⚠️ 曾被 `bm dump -a | grep stylus` 的 0 命中误导**：HSP 不出现在 bundle 列表里，`bm dump` 查不到 ≠ 运行时不可用，**不能据此断言设备缺件**。
   **顺带记下取崩溃原文的正确姿势**（`hdc shell cat/ls /data/log/...` 会被拒，因为那是 shell 用户）：
   `hdc shell "hidumper -s 1201 -a '-p Faultlogger -LogSuffixWithMs'"` 列文件名 → `hdc file recv /data/log/faultlog/faultlogger/<name> <local>` 拉全文（走 hdc 守护进程权限）。本轮两次崩溃都是靠它才读到真因。
-- **提高渲染 DPI：路已探明一半，但 pdfService 的 area 渲染这条路暂时走不通（2026-10-05 实测，不要再空手重试）**
-  - 动机与实测差距：`getPagePixelMap()` 默认出图 ≈ 2px/pt（594×840pt 的页 → **1191×1684px**），而屏幕槽位宽 1840px → 被放大 **1.54×**，正文发虚。
-  - 已确认可用：`PdfPage.getAreaPixelMapWithOptions(matrix, bitmapwidth, bitmapHeight, options?)` 是 `@since 5.1.0(18)`，本机 API 24 满足；**`bitmapwidth` 确实能决定输出尺寸**（传 1840 就出 1840px 宽）。
-  - 但**产出内容全白**：三种 matrix 语义都试过、都白——① `width/height` 当裁剪宽（511）② 把 x/y/width/height 按比例放大 ③ 按 d.ts 文档把 `width/height` 当**缩放倍率**（`PdfMatrix` 的说明原文：x/y 是"目标区域左上角在页面内的偏移(points)"，**width/height 是"相对原页的缩放倍率"**，rotate 才是旋转角）。
-  - `PdfMatrix` 只有 `x/y/width/height`；`PixelOptions` 只有 `isGray/drawAnnotations/isTransparent`——**没有任何 dpi/scale 旋钮**。
-  - **结论：不要在阅读器里继续试**，源码已回退到 legacy（`getPagePixelMap()` + `pm.crop()`）。要继续只有一条正路：**做一个独立 spike 页**（拿一页纯文字 PDF，固定 x=0,y=0，只变 width/height 与 bitmap 尺寸，逐组记录"尺寸 + 是否全白 + 内容是否对得上区域"），把语义钉死再回来改。
+- **提高渲染 DPI：在 API 24 + 本机上做不到（2026-10-05 带正控制实测，别再重试 pdfService 这条路）**
+  - 动机有实测支撑：`getPagePixelMap()` 默认出图 ≈2px/pt（594×840pt 的页 → **1191×1684px**），而屏幕槽位宽 1840px → 被放大 **1.54×**，正文发虚。
+  - **独立 spike（`pages/DpiProbe`，逐组报「输出尺寸 + 暗像素占比」，并带正控制）的最终矩阵**：
+    - `getPagePixelMap()` → 594×840，**dark=9.80%** ← **正控制：有内容，说明测量管线可信**
+    - `getAreaPixelMapWithOptions(m,w,h,options)` → 594×840，dark=**0.00%**
+    - `getAreaPixelMapWithOptions(m,w,h)`（不带 options）→ 594×840，dark=**0.00%**
+    - `getAreaPixelMap(m,w,h,false,false)`（@since 5.0.0(12) 五参旧版）→ 594×840，dark=**0.00%**
+    - 上述 area 家族 + 裁框 + `bitmap=1840` → 1840×3025，dark=**0.00%**（尺寸被兑现，内容全白）
+    - `getCustomPagePixelMap(m,false,false)` → **返回 undefined**（`Cannot read property getImageInfo of undefined`）
+  - 覆盖过的变量：三种 matrix 语义（① width/height 当裁剪宽 ② 按比例放大 x/y/width/height ③ 按 d.ts 文档把 width/height 当**缩放倍率**）、带/不带 `PixelOptions`、两个 API 版本、多种 x/y 偏移。**结论：本机 pdfService 的非默认渲染入口一律产出空图。**
+  - 另外两条路也已排除：`getPixelMapWithPages` 是 **`@since 26.0.0`**（本机 API 24 够不着，和端侧超分 `imageSuperResolution` 同一坑）；**整个 `pdfservice.d.ts` 里没有任何含 scale/dpi/zoom 的成员**，`PdfDocument` 只有 load/save/create/getPageCount/getPage。
+  - **下一步唯一没试过的是 `@hms.officeservice.PdfView.d.ets`**：声明式 PDF 视图组件（@since 5.0.0(12)），自带 `ScrollParam{pdfWidth,pdfHeight,viewWidth,viewHeight}`、`PageRects/SelectedRects`（文字/图片选择）、`RedirectInfo`、`AnnotationChangedParam` —— 机制与逐页取图完全不同，**可能同时解决清晰度与滚动**，但它会接管视口、属架构级改动，必须先单独 spike 确认它在**本机**是否可用（本机已多次出现「声明在 SDK、运行时不可用」）。
+  - 判断这类 API 是否真能用，**必须带正控制**（本次靠 `getPagePixelMap` 的 9.80% 才敢下"是 API 坏、不是我参数错"的结论）。
 - **构建陈旧陷阱（2026-10-05 踩了并因此得出过一次假结论）**：`hvigorw assembleHap` 可以打印 `BUILD SUCCESSFUL` 却**没有重新打包 HAP**（`CompileArkTS` 跑了但 `PackageHap/SignHap` 因判 UP-TO-DATE 跳过），于是"我装了新包"是假的——实测因此误判「回退后仍全白」。
   - 核实手段：看 `entry/build/default/outputs/default/entry-default-signed.hap` 的 **LastWriteTime**；可疑时先 `Remove-Item -Recurse -Force entry/build` 再构建。
   - 判断设备上跑的是哪版：用**只有新版才有的日志**做指纹（本次靠 `targetW=` 字样认出装的是旧包）。
