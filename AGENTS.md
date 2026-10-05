@@ -74,7 +74,15 @@
     - `getCustomPagePixelMap(m,false,false)` → **返回 undefined**（`Cannot read property getImageInfo of undefined`）
   - 覆盖过的变量：三种 matrix 语义（① width/height 当裁剪宽 ② 按比例放大 x/y/width/height ③ 按 d.ts 文档把 width/height 当**缩放倍率**）、带/不带 `PixelOptions`、两个 API 版本、多种 x/y 偏移。**结论：本机 pdfService 的非默认渲染入口一律产出空图。**
   - 另外两条路也已排除：`getPixelMapWithPages` 是 **`@since 26.0.0`**（本机 API 24 够不着，和端侧超分 `imageSuperResolution` 同一坑）；**整个 `pdfservice.d.ts` 里没有任何含 scale/dpi/zoom 的成员**，`PdfDocument` 只有 load/save/create/getPageCount/getPage。
-  - **下一步唯一没试过的是 `@hms.officeservice.PdfView.d.ets`**：声明式 PDF 视图组件（@since 5.0.0(12)），自带 `ScrollParam{pdfWidth,pdfHeight,viewWidth,viewHeight}`、`PageRects/SelectedRects`（文字/图片选择）、`RedirectInfo`、`AnnotationChangedParam` —— 机制与逐页取图完全不同，**可能同时解决清晰度与滚动**，但它会接管视口、属架构级改动，必须先单独 spike 确认它在**本机**是否可用（本机已多次出现「声明在 SDK、运行时不可用」）。
+- **⭐ `PdfView` 系统 PDF 视图组件：本机实测可用，是清晰度+流畅度的正解（2026-10-05 spike）**——比 pdfService 逐页取图好一整代。
+  - 入口：从**已在用的** `@kit.PDFKit` 导出 —— `import { pdfService, pdfViewManager, PdfView } from '@kit.PDFKit';`（不必引新 kit）。`@since 5.0.0(12)`。
+  - 组件极简：`PdfView({ controller, pageLayout: pdfService.PageLayout.LAYOUT_SINGLE, isContinuous: true, showScroll: true, pageFit: pdfService.PageFit.FIT_PAGE })`。
+  - `PdfController`：`loadDocument(path, password?, initPageIndex?, onProgress?)` / `registerScrollListener(cb)` / `getPagePixelMap(pageIndex, isSync?)` / `setViewOffset` / `enablePageDrag` / `setHighlightRects` / `releaseDocument`。
+  - **真机实测（临时页 PdfViewProbe，用完已删）**：不崩溃；`registerScrollListener` 注册成功；`loadDocument` 返回 `code=0`；`getPagePixelMap(0)` 给 300×424px（预览尺寸）；**`PdfView` 以设备分辨率清晰渲染并连续滚动**（截图可见页脚「005 ◀」与下页「1.2 简单数学运算」，文字锐利）。
+  - 滚动回调 `ScrollParam` 实测值：`off=(0.0,0.5) pdf=1374x46882 view=1810x2382` —— **offsetX/offsetY 是绝对偏移**（不是增量！），并同时给出 pdf/view 尺寸，屏幕↔页面坐标映射可直接推出来。
+  - 于是它一次性解决了三件事：① 设备分辨率的清晰渲染（= 我们在 pdfService 上失败的目标）② 连续滚动（`isContinuous`，系统实现）③ 绝对滚动位置（绕开 `onScroll` 增量陷阱）。
+  - **要迁移的话，代价与取舍必须明说**：`PdfView` 接管视口，**它没有裁剪 API**（我们那套 AutoCrop 去白边在它这里用不上）；现有依赖自有布局的功能（章节跳转、高水位进度、气泡按页锚定、裁白边变换、墨迹锚点）都要按它的坐标系重映射；墨迹层要改成**盖在 PdfView 之上**的覆盖层，并用 `ScrollParam` 做屏幕↔页面的坐标换算。属架构级改动，需用户拍板。
+  - 注意 `getPixelMapWithPages` 仍是 `@since 26.0.0`（与端侧超分同坑），但 `PdfView` 已经能从别的角度解决同一问题。
   - 判断这类 API 是否真能用，**必须带正控制**（本次靠 `getPagePixelMap` 的 9.80% 才敢下"是 API 坏、不是我参数错"的结论）。
 - **构建陈旧陷阱（2026-10-05 踩了并因此得出过一次假结论）**：`hvigorw assembleHap` 可以打印 `BUILD SUCCESSFUL` 却**没有重新打包 HAP**（`CompileArkTS` 跑了但 `PackageHap/SignHap` 因判 UP-TO-DATE 跳过），于是"我装了新包"是假的——实测因此误判「回退后仍全白」。
   - 核实手段：看 `entry/build/default/outputs/default/entry-default-signed.hap` 的 **LastWriteTime**；可疑时先 `Remove-Item -Recurse -Force entry/build` 再构建。
