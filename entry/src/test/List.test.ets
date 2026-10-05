@@ -35,6 +35,7 @@ import chunkWindowTest from './ChunkWindow.test';
 import presentationMathTest from './PresentationMath.test';
 import openDiagnosisTest from './OpenDiagnosis.test';
 import autoCropTest from './AutoCrop.test';
+import docInkTest from './DocInk.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -74,4 +75,5 @@ export default function testsuite() {
   presentationMathTest();
   openDiagnosisTest();
   autoCropTest();
+  docInkTest();
 }

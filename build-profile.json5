@@ -1,9 +1,20 @@
 {
   "app": {
-    // 签名材料不入库（含明文口令）。此处留空，由 DevEco Studio 在
-    // File > Project Structure > Signing Configs 勾选 Automatically generate signature 后自动回填。
-    // 本地原值备份见 .signing-config.backup.json5（已 gitignore）。
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\12991\\.ohos\\config\\default_YiBook_O5us3oeW50na_OXXRjOy28KcegKc8xIp7fa_dV9ckwY=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B6C09933EC59779214E022482DD52A5F1B763D7FCEDA3C701833BA3C276C6B2E30370068DEFFBCC",
+          "profile": "C:\\Users\\12991\\.ohos\\config\\default_YiBook_O5us3oeW50na_OXXRjOy28KcegKc8xIp7fa_dV9ckwY=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\12991\\.ohos\\config\\default_YiBook_O5us3oeW50na_OXXRjOy28KcegKc8xIp7fa_dV9ckwY=.p12",
+          "storePassword": "0000001B7F0FFDEB29773BDD91E19A61CD9CA953CBABEAF69BD1C786BBBE64F62CA70839B4F3A13568C03E"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
