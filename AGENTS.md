@@ -84,6 +84,14 @@
   - **要迁移的话，代价与取舍必须明说**：`PdfView` 接管视口，**它没有裁剪 API**（我们那套 AutoCrop 去白边在它这里用不上）；现有依赖自有布局的功能（章节跳转、高水位进度、气泡按页锚定、裁白边变换、墨迹锚点）都要按它的坐标系重映射；墨迹层要改成**盖在 PdfView 之上**的覆盖层，并用 `ScrollParam` 做屏幕↔页面的坐标换算。属架构级改动，需用户拍板。
   - 注意 `getPixelMapWithPages` 仍是 `@since 26.0.0`（与端侧超分同坑），但 `PdfView` 已经能从别的角度解决同一问题。
   - 判断这类 API 是否真能用，**必须带正控制**（本次靠 `getPagePixelMap` 的 9.80% 才敢下"是 API 坏、不是我参数错"的结论）。
+- **迁移到 `PdfView` 的两个承重未知已用 spike 验证通过（2026-10-05，用户已拍板全面迁移）**：
+  1. **覆盖层不挡滚动**：`PdfView` 全屏铺底 + 上面盖透明 `Canvas`（`.hitTestBehavior(HitTestMode.Transparent)`），实测 `uitest` 连续滑动后**文档确实翻页了**（封面 → 前言），同时覆盖层**仍能收到触摸**（`type=1 x=368 y=241`）。⇒「手指滚动 + 只有笔书写」这条铁律在 PdfView 架构下仍可用 sourceTool 过滤实现。
+  2. **页面↔屏幕映射成立**：仅凭 `ScrollParam{pdfWidth,pdfHeight,viewWidth,viewHeight,offsetX,offsetY}` + `page0` 的 pt 尺寸即可推：
+     `pxPerPt = pdfWidth / pageWidthPt`；`pageHpx = pageHeightPt * pxPerPt`；`gap = (pdfHeight - pageCount*pageHpx)/(pageCount-1)`；**屏幕 y = pageIndex*(pageHpx+gap) + pageYpt*pxPerPt - offsetY**。
+     实测按此算出的页面边框**严丝合缝贴着渲染出的页面**（封面页左右下三边完全吻合）。
+  - 注意 `scale` 是 `CustomComponent` 的保留属性名，自定义字段不能用它（编译报 "not assignable to the same property in base type"）。
+  - `TouchObject.sourceTool` 仍需运行时接口转换（与 `ink/PageInkCanvas` 同法），直接写会报 "Property 'sourceTool' does not exist"。
+  - 迁移策略（低风险推进）：**新建 `view/PdfReaderView` 走 PdfView，旧的 ReaderView 先原样保留**，逐项搬移（墨迹覆盖层 → 高水位进度 → 章节跳转 → 气泡锚定）后再切换，避免一次性重写 2200 行时把已调通的功能打破。
 - **构建陈旧陷阱（2026-10-05 踩了并因此得出过一次假结论）**：`hvigorw assembleHap` 可以打印 `BUILD SUCCESSFUL` 却**没有重新打包 HAP**（`CompileArkTS` 跑了但 `PackageHap/SignHap` 因判 UP-TO-DATE 跳过），于是"我装了新包"是假的——实测因此误判「回退后仍全白」。
   - 核实手段：看 `entry/build/default/outputs/default/entry-default-signed.hap` 的 **LastWriteTime**；可疑时先 `Remove-Item -Recurse -Force entry/build` 再构建。
   - 判断设备上跑的是哪版：用**只有新版才有的日志**做指纹（本次靠 `targetW=` 字样认出装的是旧包）。
