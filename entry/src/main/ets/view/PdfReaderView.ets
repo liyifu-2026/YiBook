@@ -96,6 +96,7 @@ export struct PdfReaderView {
   private lastPenX: number = 0;
   private lastPenY: number = 0;
   private fingerY: number = -1;   // 手指上一次的 y（用于自己累计滚动偏移）
+  private lastLoggedPage: number = -2;
 
   // ---- 笔设置（顶部栏驱动）----
   @State pen: number = PEN_PLAIN;
@@ -440,7 +441,30 @@ export struct PdfReaderView {
       this.stopTicker();
       return;
     }
+    // 诊断：getPageIndex 这类新家族接口是否可用（pdfPointToViewPoint 已实测不可用）
+    if (this.pageHpx > 0) {
+      try {
+        const idx = this.controller.getPageIndex();
+        if (idx !== this.lastLoggedPage) {
+          this.lastLoggedPage = idx;
+          hilog.info(0x0000, 'PdfReaderView',
+            `tick pageIndex=${idx} offY=${this.offY.toFixed(0)} pageHpx=${this.pageHpx.toFixed(1)}`);
+        }
+      } catch (err) {
+        if (this.lastLoggedPage !== -999) {
+          this.lastLoggedPage = -999;
+          hilog.error(0x0000, 'PdfReaderView', `getPageIndex 不可用: ${err}`);
+        }
+      }
+    }
     if (this.live.length > 0) {
+      // 书写中把页面**钉住**：enablePageDrag(false) 在本机疑似无效（笔一写页面就跟着滑，
+      // 于是笔尖与刚画出的墨迹错开 —— 用户描述为「墨迹绑不住底下的书、有漂移感」）。
+      // 这里不依赖那个 API，直接把我们记录的偏移重新下发，笔画期间页面就不会移动。
+      try {
+        this.controller.setViewOffset(0, this.offY, true);
+      } catch (err) {
+      }
       this.autoScroll();
     }
     this.drawAll();
