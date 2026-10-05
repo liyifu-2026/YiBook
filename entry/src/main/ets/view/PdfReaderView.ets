@@ -49,11 +49,7 @@ const NIGHT = '#101E33';
 
 const WIDTHS: Array<number> = [2, 4, 7];
 const RAIL_W = 64;          // 左右黑边余区宽度（vp）
-
-// 书写自动滚屏参数（px）
-const EDGE_ZONE = 140;
-const EDGE_MAX_STEP = 26;
-const TICK_MS = 33;
+const TICK_MS = 33;         // 触摸期间的重绘节拍（让墨迹跟随页面滚动）
 
 // 一页在屏幕上的线性映射：view = (ox + localX * sx, oy + localY * sy)
 interface PageMap {
@@ -101,6 +97,11 @@ export struct PdfReaderView {
   // ---- 笔设置（顶部栏驱动）----
   @State pen: number = PEN_PLAIN;
   @State penWidthIdx: number = 1;
+  // 落笔期间把墨迹层切成「挡住事件」：PdfView 就收不到笔的移动，页面不可能滚动。
+  // 这是**不用跟 SDK 抢滚动**的冻结方式（enablePageDrag 实测无效；
+  // 而 setViewOffset 去钉页面会和 PdfView 自身滚动打架 → 页面剧烈弹跳 → 乱线糊满全屏）。
+  // 只在笔落下期间为 true，手指全程不受影响。
+  @State inkBlocking: boolean = false;
 
   private controller: pdfViewManager.PdfController = new pdfViewManager.PdfController();
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
@@ -374,10 +375,16 @@ export struct PdfReaderView {
       }
       return;
     }
+    // 保险：映射还没就绪时**不接受任何笔输入**。
+    // 否则 pageHpx=0 会让所有点算成同一个垃圾坐标，落笔就画出一片乱涂。
+    if (this.pageHpx <= 0 || this.pxPerPt <= 0) {
+      return;
+    }
     this.lastPenX = t.x;
     this.lastPenY = t.y;
     const p = this.toDoc(t.x, t.y);
     if (e.type === TouchType.Down) {
+      this.inkBlocking = true;      // 冻结页面：PdfView 收不到笔的移动
       this.setPageDrag(false);
       this.livePen = this.pen;
       if (this.pen === PEN_ERASER) {
@@ -404,6 +411,7 @@ export struct PdfReaderView {
       if (this.live.length > 0) {
         this.commitLive();
       }
+      this.inkBlocking = false;     // 抬笔立刻放行，手指恢复可滚
       this.setPageDrag(true);
     }
     this.drawAll();
@@ -441,74 +449,16 @@ export struct PdfReaderView {
       this.stopTicker();
       return;
     }
-    // 诊断：getPageIndex 这类新家族接口是否可用（pdfPointToViewPoint 已实测不可用）
-    if (this.pageHpx > 0) {
-      try {
-        const idx = this.controller.getPageIndex();
-        if (idx !== this.lastLoggedPage) {
-          this.lastLoggedPage = idx;
-          hilog.info(0x0000, 'PdfReaderView',
-            `tick pageIndex=${idx} offY=${this.offY.toFixed(0)} pageHpx=${this.pageHpx.toFixed(1)}`);
-        }
-      } catch (err) {
-        if (this.lastLoggedPage !== -999) {
-          this.lastLoggedPage = -999;
-          hilog.error(0x0000, 'PdfReaderView', `getPageIndex 不可用: ${err}`);
-        }
-      }
-    }
-    if (this.live.length > 0) {
-      // 书写中把页面**钉住**：enablePageDrag(false) 在本机疑似无效（笔一写页面就跟着滑，
-      // 于是笔尖与刚画出的墨迹错开 —— 用户描述为「墨迹绑不住底下的书、有漂移感」）。
-      // 这里不依赖那个 API，直接把我们记录的偏移重新下发，笔画期间页面就不会移动。
-      try {
-        this.controller.setViewOffset(0, this.offY, true);
-      } catch (err) {
-      }
-      this.autoScroll();
-    }
+    // ⚠️ 这里**绝不能**再调 setViewOffset 去"钉住"页面：
+    // 实测它与 PdfView 自身的滚动互相打架 → 页面来回弹 → 而墨迹是按屏幕位置换算文档坐标的，
+    // 页面一弹每个采样点就落到截然不同的文档位置，连起来就是覆盖全屏的乱线（用户报的
+    // "剧烈上下抖动 + 笔墨糊满全屏"就是这么来的）。页面冻结改由 hitTestBehavior 解决（见 onTouchEvent）。
     this.drawAll();
   }
 
-  // 书写自动滚屏：笔尖进入上下边缘区就滚动页面，
-  // 并把滚动后的新位置**继续追加进当前笔画** —— 这就是「写到边缘不断笔」。
-  private autoScroll(): void {
-    if (this.live.length === 0 || this.viewH <= 0) {
-      return;
-    }
-    let step = 0;
-    const bottomZone = this.viewH - EDGE_ZONE;
-    if (this.lastPenY > bottomZone) {
-      const depth = (this.lastPenY - bottomZone) / EDGE_ZONE;
-      step = (depth > 1 ? 1 : depth) * EDGE_MAX_STEP;
-    } else if (this.lastPenY < EDGE_ZONE) {
-      const depth = (EDGE_ZONE - this.lastPenY) / EDGE_ZONE;
-      step = -(depth > 1 ? 1 : depth) * EDGE_MAX_STEP;
-    }
-    if (step === 0) {
-      return;
-    }
-    // step 是**屏幕像素**，与我们自己累计的 offY 同一单位
-    const next = this.offY + step;
-    if (next < 0) {
-      return;                           // 已经在顶部，别再往上拽
-    }
-    try {
-      this.controller.setViewOffset(0, next, true);
-    } catch (err) {
-      return;
-    }
-    // 先按我们请求的位置更新（回调不可靠，不能等它），再续笔
-    this.setOffY(next);
-    // 页面移动了，笔仍停在原屏幕位置 → 该屏幕位置现在对应新的文档点，续进笔画
-    const np = this.toDoc(this.lastPenX, this.lastPenY);
-    const last = this.live[this.live.length - 1];
-    const dx = np.x - last.x;
-    const dy = np.y - last.y;
-    if (dx * dx + dy * dy >= 0.25) {
-      this.live.push(np);
-    }
-  }
+  // 书写自动滚屏：**已按用户要求删除**（"这个功能没必要做"）。
+  // 原先的实现会在笔到边缘时 setViewOffset，和 PdfView 自身滚动打架 → 页面剧烈上下弹 →
+  // 采样点落到截然不同的文档位置 → 乱线糊满全屏。这里只留一条说明，不再有任何滚动副作用。
 
   private commitLive(): void {
     const pts = simplify(this.live, 0.8);
@@ -734,7 +684,7 @@ export struct PdfReaderView {
           Canvas(this.ctx)
             .width('100%')
             .height('100%')
-            .hitTestBehavior(HitTestMode.Transparent)
+            .hitTestBehavior(this.inkBlocking ? HitTestMode.Default : HitTestMode.Transparent)
             .onReady(() => {
               this.viewW = this.viewW > 0 ? this.viewW : 1490;
               this.viewH = this.viewH > 0 ? this.viewH : 2483;
@@ -755,6 +705,12 @@ export struct PdfReaderView {
           const h = Number(n.height);
           if (w > 0) { this.viewW = w; }
           if (h > 0) { this.viewH = h; }
+          // FIT_WIDTH 下页面宽度就等于视口宽度，所以映射可以直接由视口尺寸推出，
+          // **不必依赖几乎不触发的 ScrollParam**（这是上一版"墨迹粘在屏幕上"的根因之一）。
+          if (this.viewW > 0 && this.docLayout.pageW > 0) {
+            this.pxPerPt = this.viewW / this.docLayout.pageW;
+            this.pageHpx = this.docLayout.pageH * this.pxPerPt;
+          }
           this.drawAll();
         })
         this.RightRail()
